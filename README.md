@@ -18,11 +18,12 @@ Duke Nukem 3D (and its expansions), and the packer turns it into ROMs.
   of it.
 * A flashcart (EverDrive-64, SummerCart64…) or an emulator (ares, simple64…).
 
-> **Game Expansions: recommended for overclocked N64s.** The maps of Duke It Out In D.C.,
-> Life's A Beach and Nuclear Winter are bigger and busier than the base game's, and on a
-> stock N64 the frame rate drops noticeably in their most complex areas. They are
-> playable, but a modded console with an overclocked CPU (or an emulator with overclock
-> enabled) is recommended. The base game is what runs best on an unmodified N64.
+> **Game Expansions: play them on a console that supports overclocking.** For Duke It Out
+> In D.C., Life's A Beach and Nuclear Winter, use a console with overclocking support,
+> such as the ModRetro M64 or the Analogue 3D, with overclocking turned on (or an emulator
+> with overclock enabled). Their maps are bigger and busier than the base game's, and on a
+> stock N64 the frame rate drops noticeably in their most complex areas. The base game
+> runs fine on an unmodified N64.
 
 ## The game files
 
