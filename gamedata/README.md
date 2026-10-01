@@ -1,13 +1,13 @@
 # gamedata/
 
-Aquí van **tus** archivos originales de Duke Nukem 3D. No se incluyen en el repositorio
-(todo lo que hay aquí, salvo este README, está en `.gitignore`).
+**Your** original Duke Nukem 3D files go here. They are not included in the repository
+(everything here except this README is in `.gitignore`).
 
 ```
 gamedata/
-├── DUKE3D.GRP        juego base: shareware 1.3D o Atomic Edition 1.4/1.5
-├── DUKE.RTS          opcional (Remote Ridicule)
-├── nwinter/          una carpeta por expansión → output/duke3d-nwinter.z64
+├── DUKE3D.GRP        base game: shareware 1.3D or Atomic Edition 1.4/1.5
+├── DUKE.RTS          optional (Remote Ridicule)
+├── nwinter/          one folder per expansion → output/duke3d-nwinter.z64
 │   └── NWINTER.GRP
 ├── vacation/
 │   ├── VACATION.GRP
@@ -18,14 +18,13 @@ gamedata/
     └── DUKEDCPP.SSI
 ```
 
-- En lugar de `DUKE3D.GRP` vale un `.zip` de tu instalación que lo contenga.
-- Cada carpeta de expansión puede tener su GRP, su instalador `.SSI` de Sunstorm, sus
-  archivos sueltos o un único `.zip` con cualquiera de ellos. El nombre de la carpeta da
-  el nombre a la ROM (`duke3d-<carpeta>.z64`) y al fondo del menú
-  (`assets/addons/<carpeta>.png`): usa `nwinter`, `vacation` y `dukedc` para aprovechar
-  los que ya trae el proyecto.
-- Las expansiones necesitan la Atomic Edition (1.4/1.5) como juego base.
-- Las carpetas que empiezan por `_`, o que tienen su propio `DUKE3D.GRP`, se ignoran
-  (sirven para guardar otras versiones).
-- Si una expansión viene en imagen de CD (`.bin`/`.iso`):
-  `python tools/cd_extract.py imagen.bin gamedata/<nombre>`.
+- Instead of `DUKE3D.GRP`, a `.zip` of your installation that contains it works too.
+- Each expansion folder can hold its GRP, its Sunstorm `.SSI` installer, its loose files or
+  a single `.zip` with any of them. The folder name gives the ROM its name
+  (`duke3d-<folder>.z64`) and picks the menu background (`assets/addons/<folder>.png`):
+  use `nwinter`, `vacation` and `dukedc` to get the ones the project already has.
+- The expansions need the Atomic Edition (1.4/1.5) as the base game.
+- Folders whose name starts with `_`, or that have their own `DUKE3D.GRP`, are skipped
+  (useful for keeping other versions).
+- If an expansion comes as a CD image (`.bin`/`.iso`):
+  `python tools/cd_extract.py image.bin gamedata/<name>`.

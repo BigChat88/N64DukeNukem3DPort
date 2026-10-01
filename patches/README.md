@@ -1,14 +1,14 @@
 # patches/
 
-Cambios sobre el submódulo `libdragon` (commit fijado en `.gitmodules`/git), aplicados
-por GitHub Actions antes de compilarlo. Para compilar desde el código fuente, aplícalos
-una vez después de `git submodule update --init`:
+Changes to the `libdragon` submodule (commit pinned in `.gitmodules`/git), applied by
+GitHub Actions before building it. To build from source, apply them once after
+`git submodule update --init`:
 
 ```sh
 git -C libdragon apply ../patches/libdragon-mixer-clamp-frequency.patch
 libdragon install
 ```
 
-| parche | por qué |
+| patch | why |
 |---|---|
-| `libdragon-mixer-clamp-frequency.patch` | el sintetizador MIDI puede pasar un instante de la frecuencia máxima de un canal (nota aguda + envolvente de tono del SoundFont); en vez de abortar con un `assert`, la limita |
+| `libdragon-mixer-clamp-frequency.patch` | the MIDI synthesizer can briefly go over a channel's maximum frequency (high note + SoundFont pitch envelope); instead of aborting with an `assert`, it clamps it |

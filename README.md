@@ -1,207 +1,179 @@
-# Duke Nukem 3D para Nintendo 64
+# Duke Nukem 3D for Nintendo 64
 
-Port del Duke Nukem 3D original (motor Build) a N64 con [libdragon](https://github.com/DragonMinded/libdragon)
-(rama `preview`), a partir de [Chocolate Duke3D](https://github.com/fabiensanglard/chocolate_duke3D).
-Ver [src/UPSTREAM.md](src/UPSTREAM.md) para el origen del código y las licencias.
+A port of the original Duke Nukem 3D (Build engine) to the N64 with
+[libdragon](https://github.com/DragonMinded/libdragon) (`preview` branch), based on
+[Chocolate Duke3D](https://github.com/fabiensanglard/chocolate_duke3D).
+See [src/UPSTREAM.md](src/UPSTREAM.md) for where the code comes from and its licenses.
 
-**Requiere Expansion Pak (8 MB).**
+**Requires the Expansion Pak (8 MB).**
 
-Ningún dato del juego con copyright está en este repositorio: tú pones tu copia de
-Duke Nukem 3D (y de sus expansiones) y el empaquetador la convierte en ROMs.
+No copyrighted game data is in this repository: you provide your own copy of
+Duke Nukem 3D (and its expansions), and the packer turns it into ROMs.
 
-## Qué necesitas para jugar
+## What you need to play
 
-* Un **Expansion Pak** (8 MB de RAM), en la consola o activado en el emulador.
-  Sin él el juego no arranca.
-* Las partidas se guardan en la FlashRAM del cartucho: el flashcart o el emulador se
-  encargan solo.
-* Un flashcart (EverDrive-64, SummerCart64…) o un emulador (ares, simple64…).
+* An **Expansion Pak** (8 MB of RAM), in the console or enabled in the emulator.
+  The game does not boot without it.
+* Games are saved to the cartridge FlashRAM: the flashcart or the emulator takes care
+  of it.
+* A flashcart (EverDrive-64, SummerCart64…) or an emulator (ares, simple64…).
 
-> **Expansiones: recomendadas para N64 con overclock.** Los mapas de Duke It Out In D.C.,
-> Life's A Beach y Nuclear Winter son más grandes y cargados que los del juego base, y en
-> una N64 de serie la tasa de fotogramas baja bastante en sus zonas más complejas. Se
-> juegan, pero lo recomendable es una consola modificada con overclock de la CPU (o un
-> emulador con overclock activado). El juego base es el que mejor funciona en una N64
-> sin modificar.
+> **Game Expansions: recommended for overclocked N64s.** The maps of Duke It Out In D.C.,
+> Life's A Beach and Nuclear Winter are bigger and busier than the base game's, and on a
+> stock N64 the frame rate drops noticeably in their most complex areas. They are
+> playable, but a modded console with an overclocked CPU (or an emulator with overclock
+> enabled) is recommended. The base game is what runs best on an unmodified N64.
 
-## Los archivos del juego
+## The game files
 
-Copia en [`gamedata/`](gamedata/README.md) los archivos originales:
+Copy the original files into [`gamedata/`](gamedata/README.md):
 
-* `DUKE3D.GRP` (shareware 1.3D o Atomic Edition 1.4/1.5) y, si lo tienes, `DUKE.RTS`.
-  Vale también un `.zip` de tu instalación que los contenga.
-* Cada expansión en su propia carpeta dentro de `gamedata/` (necesitan la Atomic Edition):
+* `DUKE3D.GRP` (shareware 1.3D or Atomic Edition 1.4/1.5) and, if you have it, `DUKE.RTS`.
+  A `.zip` of your installation that contains them works too.
+* Each expansion in its own folder inside `gamedata/` (they need the Atomic Edition):
 
-| Expansión | Carpeta | Qué poner dentro | Episodio | ROM |
+| Expansion | Folder | What to put in it | Episode | ROM |
 |---|---|---|---|---|
 | Nuclear Winter | `gamedata/nwinter/` | `NWINTER.GRP` | 2 | 52 MB |
-| Life's A Beach | `gamedata/vacation/` | `VACATION.GRP` + sus `GAME.CON`, `USER.CON`, `DEFS.CON` sueltos | 3 | 56 MB |
-| Duke It Out In D.C. | `gamedata/dukedc/` | `DUKEDCPP.SSI` (versión 1.4/1.5, del CD) | 3 | 52 MB |
+| Life's A Beach | `gamedata/vacation/` | `VACATION.GRP` + its loose `GAME.CON`, `USER.CON`, `DEFS.CON` | 3 | 56 MB |
+| Duke It Out In D.C. | `gamedata/dukedc/` | `DUKEDCPP.SSI` (version 1.4/1.5, from the CD) | 3 | 52 MB |
 
-Una carpeta puede tener también los archivos sueltos de la expansión o un único `.zip`.
-Si viene en imagen de CD (`.bin`/`.iso`), `python tools/cd_extract.py imagen.bin
-gamedata/<nombre>` saca sus archivos. Detalles en [gamedata/README.md](gamedata/README.md).
+A folder can also hold the expansion's loose files or a single `.zip`.
+If it comes as a CD image (`.bin`/`.iso`), `python tools/cd_extract.py image.bin
+gamedata/<name>` extracts its files. Details in [gamedata/README.md](gamedata/README.md).
 
-## Cómo generar las ROMs
+## How to build the ROMs
 
-Solo hace falta **[Python 3](https://www.python.org/downloads/)** en el `PATH`
-(`python --version`). Ni Docker ni el toolchain de N64: GitHub Actions compila el juego
-en cada push a `main` y lo publica en una Release, con el SoundFont, el logo de arranque
-y los fondos de menú ya convertidos.
+All you need is **[Python 3](https://www.python.org/downloads/)** in your `PATH`
+(`python --version`). No Docker and no N64 toolchain: GitHub Actions compiles the game
+on every push to `main` and publishes it in a Release, with the SoundFont, the boot logo
+and the menu backgrounds already converted.
 
-1. Descarga la última [Release](../../releases) y descomprímela.
-2. Pon tus archivos en `gamedata/` (ver arriba).
-3. Ejecuta:
-   * **Windows:** doble clic en `build.cmd`.
-   * **Cualquier sistema:** `python tools/pack_rom.py`
-4. Las ROMs aparecen en [`output/`](output/README.md): `duke3d.z64` para el juego base y
-   `duke3d-<carpeta>.z64` para cada expansión, cada una con sus propias partidas guardadas.
+1. Download the latest [Release](../../releases) and unzip it.
+2. Put your files in `gamedata/` (see above).
+3. Run:
+   * **Windows:** double-click `build.cmd`.
+   * **Any system:** `python tools/pack_rom.py`
+4. The ROMs appear in [`output/`](output/README.md): `duke3d.z64` for the base game and
+   `duke3d-<folder>.z64` for each expansion, each with its own saved games.
 
-Opciones de `tools/pack_rom.py`:
+`tools/pack_rom.py` options:
 
 ```sh
-python tools/pack_rom.py base                 # solo el juego base
-python tools/pack_rom.py nwinter              # solo gamedata/nwinter/
-python tools/pack_rom.py ruta/MISMAPAS.zip --con MISMAPAS.CON   # mapas de usuario
-python tools/pack_rom.py --soundfont ruta/pequeno.sf2           # ROMs más pequeñas
+python tools/pack_rom.py base                 # only the base game
+python tools/pack_rom.py nwinter              # only gamedata/nwinter/
+python tools/pack_rom.py path/MYMAPS.zip --con MYMAPS.CON   # user maps
+python tools/pack_rom.py --soundfont path/small.sf2         # smaller ROMs
 ```
 
-La Release trae las herramientas para Windows y Linux x86-64; en otros sistemas se
-compilan con `tools/vendor/bin/build-tools.sh` (ver
+The Release ships the tools for Windows and Linux x86-64; on other systems they are
+built with `tools/vendor/bin/build-tools.sh` (see
 [tools/vendor/bin/README.md](tools/vendor/bin/README.md)).
 
-### Cómo funcionan las expansiones
+### How the expansions work
 
-- La ROM solo tiene los episodios de la expansión (los que tienen mapas en ella, según sus
-  `definelevelname`); si es uno solo, el menú pasa directamente a elegir la dificultad.
-- Del GRP base se quita lo que no se usa (`tools/addon_base.py`): los archivos que la
-  expansión sustituye, los mapas y las animaciones de los otros episodios, las demos y los
-  CON base si la expansión trae los suyos. Nuclear Winter: 52 MB en vez de 75.
-- El script CON se elige solo: `GAME.CON` si la expansión trae uno, si no el que se llama
-  como el GRP (`NWINTER.CON` en `NWINTER.GRP`), si no su único `.CON` aparte de
-  `DEFS.CON`/`USER.CON`. Si no acierta: `--con NOMBRE.CON`.
-- El juego compilado es el mismo para todas las ROMs: la de una expansión lleva su GRP en
-  `rom:/addon/` y su nombre en `rom:/addon/ADDON.TXT`, que el juego lee al arrancar.
-- Fondo del menú principal: `assets/addons/<carpeta>.png` (320×200, 256 colores), hecho a
-  partir de cualquier imagen 4:3 con `python tools/menubg.py imagen.jpg
-  assets/addons/<carpeta>.png` (necesita Pillow). Ya están los de Nuclear Winter, Life's
-  A Beach y D.C. Sin imagen, el menú usa la pantalla de título del juego, como el base.
+- The ROM only has the expansion's episodes (those with maps in it, according to its
+  `definelevelname`); if there is only one, the menu goes straight to the skill choice.
+- What is not used is removed from the base GRP (`tools/addon_base.py`): the files the
+  expansion replaces, the maps and animations of the other episodes, the demos, and the
+  base CONs if the expansion brings its own. Nuclear Winter: 52 MB instead of 75.
+- The CON script is picked automatically: `GAME.CON` if the expansion has one, otherwise
+  the one named like the GRP (`NWINTER.CON` in `NWINTER.GRP`), otherwise its only `.CON`
+  besides `DEFS.CON`/`USER.CON`. If it guesses wrong: `--con NAME.CON`.
+- The compiled game is the same for every ROM: an expansion's ROM carries its GRP in
+  `rom:/addon/` and its name in `rom:/addon/ADDON.TXT`, which the game reads at boot.
+- Main menu background: `assets/addons/<folder>.png` (320×200, 256 colors), made from
+  any 4:3 image with `python tools/menubg.py image.jpg assets/addons/<folder>.png`
+  (needs Pillow). Nuclear Winter, Life's A Beach and D.C. already have one. Without an
+  image, the menu uses the game's title screen, like the base game.
 
-## Compilar desde el código fuente
+## Building from source
 
-Para trabajar en el código hace falta el toolchain de N64, que va en Docker mediante el
-CLI `libdragon`:
+Working on the code needs the N64 toolchain, which runs in Docker through the
+`libdragon` CLI:
 
 * **[Docker](https://www.docker.com/)**
-* **El CLI `libdragon`** (`npm install -g libdragon`, ver `.libdragon/config.json`)
+* **The `libdragon` CLI** (`npm install -g libdragon`, see `.libdragon/config.json`)
 
 ```sh
-git clone --recurse-submodules <url-del-repositorio>
+git clone --recurse-submodules <repository-url>
 cd N64DukeNukem3DPort
-git -C libdragon apply ../patches/libdragon-mixer-clamp-frequency.patch   # ver patches/
-libdragon install        # la primera vez: compila el libdragon fijado en el contenedor
+git -C libdragon apply ../patches/libdragon-mixer-clamp-frequency.patch   # see patches/
+libdragon install        # the first time: builds the pinned libdragon in the container
 ```
 
-Con los archivos en `gamedata/`:
+With the files in `gamedata/`:
 
 ```sh
 libdragon make                          # output/duke3d.z64
-libdragon make ADDON=gamedata/nwinter   # output/duke3d-nwinter.z64 (ADDON_CON=NOMBRE.CON)
-libdragon make roms                     # el juego base y todas las expansiones
-libdragon make engine                   # solo el juego compilado + multimedia: build/prebuilt/
+libdragon make ADDON=gamedata/nwinter   # output/duke3d-nwinter.z64 (ADDON_CON=NAME.CON)
+libdragon make roms                     # the base game and every expansion
+libdragon make engine                   # only the compiled game + media: build/prebuilt/
 ```
 
-`make` compila el juego (`make engine`) y después llama a `tools/pack_rom.py`, el mismo
-empaquetador de la Release. La versión del proyecto está en `VERSION`: cada push a `main`
-publica (o actualiza) la Release `v<VERSION>`.
+`make` compiles the game (`make engine`) and then calls `tools/pack_rom.py`, the same
+packer as the Release. The project version is in `VERSION`: every push to `main`
+publishes (or updates) the `v<VERSION>` Release.
 
-## Controles
+## Controls
 
-**En la partida**
+**In game**
 
-| Mando N64 | Acción |
+| N64 controller | Action |
 |---|---|
-| Stick arriba / abajo | Andar adelante / atrás |
-| Stick izquierda / derecha | Girar (analógico: suave cerca del centro, rápido al fondo) |
-| Z | Disparar |
-| R | Abrir / usar |
-| A | Saltar |
-| B (mantener) | Correr (con "RUN ALWAYS" activado en Game Options: andar) |
-| R + B | Patada rápida |
-| C-izq / C-der | Paso lateral |
-| C-abajo | Agacharse |
-| C-arriba | Centrar la vista |
-| R + C-arriba / C-abajo | Mirar (apuntar) arriba / abajo |
-| L | Usar el objeto del inventario |
-| Cruceta izq / der | Arma anterior / siguiente |
-| Cruceta arriba / abajo | Objeto anterior / siguiente |
-| Start | Menú |
+| Stick up / down | Walk forward / back |
+| Stick left / right | Turn (analog: gentle near the center, fast at the edge) |
+| Z | Fire |
+| R | Open / use |
+| A | Jump |
+| B (hold) | Run (with "RUN ALWAYS" on in Game Options: walk) |
+| R + B | Quick kick |
+| C-left / C-right | Strafe |
+| C-down | Crouch |
+| C-up | Center the view |
+| R + C-up / C-down | Look (aim) up / down |
+| L | Use the inventory item |
+| D-pad left / right | Previous / next weapon |
+| D-pad up / down | Previous / next item |
+| Start | Menu |
 
-**En los menús:** stick o cruceta para moverse, A para aceptar, B o Start para volver.
+**In menus:** stick or D-pad to move, A to accept, B or Start to go back.
 
-## Estado
 
-- [x] Compila y enlaza con libdragon `preview`.
-- [x] Arranca, monta la ROM y muestra errores en pantalla.
-- [x] Carga el GRP (probado con el shareware 1.3D), menús y niveles (E1L1 en ares).
-- [x] Efectos de sonido mezclados en el RSP (~1,5 ms de CPU por fotograma). Verificado por
-  el pico de la señal de salida en el log; falta escucharlo en hardware.
-- [ ] Reverberación (la del original era un efecto por CPU; no implementada).
-- [x] Música MIDI: las canciones del GRP se convierten al compilar y suenan con un
-  SoundFont General MIDI (GeneralUser GS) mezclado en el RSP. Pausar reinicia la canción.
-- [x] Partidas guardadas en la FlashRAM del cartucho (128 KB): 3 ranuras. Al elegir una
-  ranura se guarda al momento (nombre DUKE1..DUKE3, no hay teclado). Cada partida guarda solo
-  lo que cambió respecto al mapa y se comprime (~40 KB en E1L1, 130 KB sin esto); si un nivel
-  muy cargado no deja sitio para la tercera, sale "NOT ENOUGH SAVE SPACE" y se puede
-  sobrescribir otra. Solo sirven con el mismo GRP/CON con el que se guardaron.
-- [ ] Demos (desactivadas: su formato asume little-endian).
-- [ ] Stick analógico real (ahora se traduce a teclas).
-- [ ] Rendimiento: ~16 FPS en el inicio de E1L1 en ares (con música y animaciones).
-  Reparto por fotograma: suelos 10 ms, cielo 9,5, sprites 9,5, lógica 9, geometría 6,
-  paredes 4, audio 4, rampas 3,5.
+## Debugging
 
-## Depuración
+- `libdragon make ARGS="/v1 /l1"`: boots straight into episode 1, level 1 (any DOS
+  command line argument).
+- `libdragon make clean && libdragon make PROFILE=1`: every second, writes to the log the
+  FPS, the milliseconds per frame of each render phase and the audio peak with the active
+  voices, plus the libdragon profiler (mixer, music) every 5 s.
+- `libdragon make INPUT="8000:A 9500:A 12000-14000:U"`: simulated controller for tests
+  without a player (A button at 8 and 9.5 s, stick up from 12 to 14 s). Buttons:
+  `A B Z L R S`, stick `U D < >`, C buttons `u d l r`.
+- A normal build (without `ARGS`/`INPUT`) never keeps those test options.
+- `libdragon make RDP_COLUMNS=0`: walls and sky are drawn on the CPU again (by default the
+  RDP draws them, see `src/n64/n64_columns.h`), for comparison.
+- `libdragon make GOD=1`: the player does not die (for measuring: the dead player's view is
+  drawn differently and skews the measurements).
+- `libdragon make LEVELSKIP=8`: moves on to the next level by itself every 8 s (with `GOD`),
+  and `LEVELCYCLE=3` repeats the first 3 of the episode. With the
+  `memory E1L2: heap used ...` line the log writes on each level, it checks for memory leaks.
+- `libdragon make QUAKE=6`: every 6 s, in turn: nothing, an earthquake, nothing, the screen
+  tilted, nothing, explosions with debris in front of the player; to compare their profiles.
+- `libdragon make DETONATE=253`: 8 s into the level, sets off the C-9s with that hitag, as
+  if they had been shot (explosions that change the map).
+- ares shows the log (`printf`/`debugf`) on its standard output.
 
-- `libdragon make ARGS="/v1 /l1"`: arranca directamente en el episodio 1, nivel 1
-  (cualquier argumento de la línea de comandos de DOS).
-- `libdragon make clean && libdragon make PROFILE=1`: escribe cada segundo en el log
-  los FPS, los milisegundos por fotograma de cada fase del render y el pico de audio
-  con las voces activas, más el perfilador de libdragon (mezclador, música) cada 5 s.
-- `libdragon make INPUT="8000:A 9500:A 12000-14000:U"`: mando simulado para pruebas sin
-  jugador (botón A a los 8 y 9,5 s, stick arriba de 12 a 14 s). Botones: `A B Z L R S`,
-  stick `U D < >`, botones C `u d l r`.
-- Una compilación normal (sin `ARGS`/`INPUT`) nunca conserva esas opciones de prueba.
-- `libdragon make RDP_COLUMNS=0`: paredes y cielo vuelven a dibujarse en la CPU (por defecto
-  los dibuja el RDP, ver `src/n64/n64_columns.h`), para comparar.
-- `libdragon make GOD=1`: el jugador no muere (para medir: la vista de muerto se dibuja de
-  otra forma y falsea las medidas).
-- `libdragon make LEVELSKIP=8`: pasa solo al siguiente nivel cada 8 s (con `GOD`), y
-  `LEVELCYCLE=3` repite los 3 primeros del episodio. Con la línea `memory E1L2: heap used ...`
-  que el log escribe en cada nivel, sirve para comprobar que no hay fugas de memoria.
-- ares muestra el log (`printf`/`debugf`) en su salida estándar.
+## License
 
-## Arquitectura (N64)
+- Game code: GPL v2 or later (see [LICENSE](LICENSE)).
+- Build engine: Ken Silverman's license ([BUILDLIC.TXT](BUILDLIC.TXT)), which only allows
+  distributing derived works for free.
+- Duke Nukem 3D and its data belong to their owners and are not included here.
 
-- `src/n64/n64_display.c`: Build dibuja en un búfer de 8 bits de 320×200. El RDP lo copia
-  al framebuffer como textura CI8 con la paleta en TMEM, así que la conversión de color
-  no gasta CPU. El VI estira 320×200 a 4:3, como el modo 13h de VGA.
-  Encima, el RDP dibuja el arma, la mira, los menús, el HUD y los sprites de cara del mundo
-  (enemigos, objetos) que no quedan detrás de una pared enmascarada (`src/n64/n64_overlay.h`).
-- `src/n64/n64_fx.c`: la API de efectos del juego (`FX_*`) sobre el mezclador de libdragon.
-  Cada voz es un canal mezclado por el RSP; la CPU solo convierte las muestras (8 bits sin
-  signo / 16 bits little-endian) y conserva el paneo 3D, volúmenes y prioridades del original.
-- `src/n64/n64_system.c`: arranque (DragonFS, comprobación del Expansion Pak) y pantalla de error.
+More details in [src/UPSTREAM.md](src/UPSTREAM.md).
 
-## Licencia
+## A note on AI
 
-- Código del juego: GPL v2 o posterior (ver [LICENSE](LICENSE)).
-- Motor Build: licencia de Ken Silverman ([BUILDLIC.TXT](BUILDLIC.TXT)), que solo permite
-  distribuir obras derivadas gratis.
-- Duke Nukem 3D y sus datos pertenecen a sus propietarios y no se incluyen aquí.
-
-Más detalles en [src/UPSTREAM.md](src/UPSTREAM.md).
-
-## Nota sobre IA
-
-El proyecto se ha desarrollado con ayuda de IA. Solo soy un aficionado que quería hacer
-proyectos interesantes; en este caso, cómo se ha conseguido no es lo importante para mí.
+This project was developed with the help of AI. I am just a hobbyist who wanted to make
+interesting projects; in this case, how it was achieved is not what matters to me.

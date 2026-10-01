@@ -1,8 +1,8 @@
 # output/
 
-`build.cmd`, `tools/pack_rom.py` y `make` escriben aquí las ROMs: `duke3d.z64` (juego base)
-y `duke3d-<expansión>.z64`.
+`build.cmd`, `tools/pack_rom.py` and `make` write the ROMs here: `duke3d.z64` (base game)
+and `duke3d-<expansion>.z64`.
 
-Ejecútalas en un emulador de N64 (ares, simple64…) con el Expansion Pak activado, o
-cópialas a un flashcart (EverDrive-64, SummerCart64…). Nada de esta carpeta se sube al
-repositorio: las ROMs contienen tu copia del juego.
+Run them in an N64 emulator (ares, simple64…) with the Expansion Pak enabled, or copy
+them to a flashcart (EverDrive-64, SummerCart64…). Nothing in this folder is committed to
+the repository: the ROMs contain your copy of the game.

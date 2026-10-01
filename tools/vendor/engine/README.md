@@ -1,24 +1,23 @@
 # tools/vendor/engine
 
-El juego precompilado que `tools/pack_rom.py` mete en cada ROM:
+The precompiled game that `tools/pack_rom.py` puts into every ROM:
 
-| archivo | qué es |
+| file | what it is |
 |---|---|
-| `duke3d.elf.stripped` | el juego compilado (ELF comprimido) |
-| `duke3d.elf.sym` | símbolos para las trazas de los errores |
-| `soundfont.sf64` | el SoundFont General MIDI de la música, ya convertido |
-| `intro/*.sprite` | el logo "powered by libdragon" del arranque |
-| `menubg/*.sprite` | el fondo del menú de cada expansión (`assets/addons/*.png`) |
-| `libdragon.version` | versión de libdragon |
-| `rom.cfg` | cabecera de la ROM (título, guardado, Expansion Pak) |
+| `duke3d.elf.stripped` | the compiled game (compressed ELF) |
+| `duke3d.elf.sym` | symbols for error backtraces |
+| `soundfont.sf64` | the music's General MIDI SoundFont, already converted |
+| `intro/*.sprite` | the "powered by libdragon" boot logo |
+| `menubg/*.sprite` | each expansion's menu background (`assets/addons/*.png`) |
+| `libdragon.version` | libdragon version |
+| `rom.cfg` | ROM header (title, save type, Expansion Pak) |
 
-No contienen datos del juego y son iguales para todos: la misma compilación sirve para el
-juego base y para todas las expansiones (la ROM de una expansión lleva su nombre en
-`rom:/addon/ADDON.TXT`).
+They hold no game data and are the same for everyone: the same build serves the base game
+and every expansion (an expansion's ROM carries its name in `rom:/addon/ADDON.TXT`).
 
-Se obtienen de:
+Get them from:
 
-* **Una [Release](../../../../releases)**: GitHub Actions los compila en cada push a `main`
-  y los incluye en esta carpeta.
-* **`make engine`** en la raíz, dentro de `libdragon exec` (necesita Docker y el CLI
-  `libdragon`). Quedan en `build/prebuilt/`, donde `pack_rom.py` también busca.
+* **A [Release](../../../../releases)**: GitHub Actions builds them on every push to
+  `main` and includes them in this folder.
+* **`make engine`** at the root, inside `libdragon exec` (needs Docker and the `libdragon`
+  CLI). They end up in `build/prebuilt/`, where `pack_rom.py` also looks.
