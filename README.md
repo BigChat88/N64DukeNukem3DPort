@@ -1,7 +1,7 @@
 # Duke Nukem 3D for Nintendo 64
 
 A port of the original Duke Nukem 3D (Build engine) to the N64 with
-[libdragon](https://github.com/DragonMinded/libdragon) (`preview` branch), based on
+[libdragon](https://github.com/n64brew/libdragon) (`preview` branch), based on
 [Chocolate Duke3D](https://github.com/fabiensanglard/chocolate_duke3D).
 See [src/UPSTREAM.md](src/UPSTREAM.md) for where the code comes from and its licenses.
 
@@ -14,8 +14,8 @@ Duke Nukem 3D (and its expansions), and the packer turns it into ROMs.
 
 * An **Expansion Pak** (8 MB of RAM), in the console or enabled in the emulator.
   The game does not boot without it.
-* Games are saved to the cartridge FlashRAM: the flashcart or the emulator takes care
-  of it.
+* Games and settings are saved to the cartridge FlashRAM: the flashcart or the emulator
+  takes care of it.
 * A flashcart (EverDrive-64, SummerCart64…) or an emulator (ares, simple64…).
 
 > **Game Expansions: play them on a console that supports overclocking.** For Duke It Out
@@ -114,7 +114,8 @@ libdragon make engine                   # only the compiled game + media: build/
 
 `make` compiles the game (`make engine`) and then calls `tools/pack_rom.py`, the same
 packer as the Release. The project version is in `VERSION`: every push to `main`
-publishes (or updates) the `v<VERSION>` Release.
+publishes (or updates) the `v<VERSION>` Release, moving its tag to that commit so that the
+tag, the code and the binaries always match. Pull requests only build and test.
 
 ## Controls
 
@@ -137,6 +138,7 @@ publishes (or updates) the `v<VERSION>` Release.
 | D-pad left / right | Previous / next weapon |
 | D-pad up / down | Previous / next item |
 | Start | Menu |
+| R + Start | Map: over the view, full screen, off (each press). It shows what you have seen |
 
 **In menus:** stick or D-pad to move, A to accept, B or Start to go back.
 
@@ -164,6 +166,11 @@ publishes (or updates) the `v<VERSION>` Release.
 - `libdragon make DETONATE=253`: 8 s into the level, sets off the C-9s with that hitag, as
   if they had been shot (explosions that change the map).
 - ares shows the log (`printf`/`debugf`) on its standard output.
+- `make -C tests/host`: tests of the save filesystem and the sound file parsers, built for
+  the PC (any C compiler; CI runs them with AddressSanitizer).
+- `libdragon make WARNINGS=1 BUILD_DIR=build/warnings engine`: builds with the warnings the
+  Makefile turns off for the 1996 code, in its own folder. `src/n64` is always built with
+  them on, as errors.
 
 ## License
 

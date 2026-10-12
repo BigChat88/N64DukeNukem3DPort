@@ -245,18 +245,29 @@ int MUSIC_GetVolume(void)
     return music_volume;
 }
 
+// The sequencer cannot resume a song where it stopped (playing starts it
+// over): a pause mutes the synthesizer instead, and the song goes on
+// silently. Muted channels cut their notes and ignore new ones.
+static void set_muted(int mute)
+{
+    int ch;
+
+    if (synth)
+        for (ch = 0; ch < SF64_MIDI_CHANNELS; ch++)
+            sf64_synth_mute_channel(synth, ch, mute);
+}
+
 void MUSIC_Continue(void)
 {
-    // The sequencer cannot resume mid-song: the song restarts.
-    if (player && paused)
-        mid64player_play(player, &volume_target.base);
+    if (paused)
+        set_muted(0);
     paused = 0;
 }
 
 void MUSIC_Pause(void)
 {
-    if (player && !paused)
-        mid64player_stop(player);
+    if (!paused)
+        set_muted(1);
     paused = 1;
 }
 
@@ -267,6 +278,8 @@ int MUSIC_StopSong(void)
         mid64player_close(player);
         player = NULL;
     }
+    if (paused)
+        set_muted(0);
     paused = 0;
     return MUSIC_Ok;
 }

@@ -19,6 +19,7 @@
  * See the included license file "BUILDLIC.TXT" for license info.
  * This file IS NOT A PART OF Ken Silverman's original release
  */
+#include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -141,10 +142,10 @@ static void prof_report(int frames)
         n64_con_prof_report(frames);
     }
     {
-        extern int n64_wall_fallback[5];
-        debugf("  wall columns on the CPU: inactive=%d size=%d logw=%d full=%d lock=%d (per frame)\n",
+        extern int n64_wall_fallback[6];
+        debugf("  wall columns on the CPU: inactive=%d size=%d logw=%d full=%d lock=%d palettes=%d (per frame)\n",
                n64_wall_fallback[0] / frames, n64_wall_fallback[1] / frames, n64_wall_fallback[2] / frames,
-               n64_wall_fallback[3] / frames, n64_wall_fallback[4] / frames);
+               n64_wall_fallback[3] / frames, n64_wall_fallback[4] / frames, n64_wall_fallback[5] / frames);
         memset(n64_wall_fallback, 0, sizeof(n64_wall_fallback));
         n64_log_memory("now");
         extern int n64_cols_added;
@@ -299,8 +300,13 @@ void *n64_screen_buffer(void)
 static void cols_release(void)
 {
     int i;
+    // A tile can be locked by both the columns and the overlay (ovl_clear),
+    // each keeping the lock it found, in either order and released in
+    // either order: only a lock still at 255 is given back, so that the
+    // original one is restored last and a lock never stays at 255.
     for (i = col_ntiles - 1; i >= 0; i--)
-        *col_tiles[i].lock = col_tiles[i].saved_lock;
+        if (*col_tiles[i].lock == 255)
+            *col_tiles[i].lock = col_tiles[i].saved_lock;
     col_ntiles = 0;
     col_locked_bytes = 0;
     col_ntluts = 0;
@@ -394,7 +400,10 @@ static void col_tlut_build(int i)
     data_cache_hit_writeback(buf, 256 * sizeof(uint16_t));
 }
 
-// The palette slot of a shade table (a row of BUILD's palookup).
+// The palette slot of a shade table (a row of BUILD's palookup), or NULL
+// when they are all taken. (A slot cannot be reused within the frame: the
+// RDP reads the palettes when the frame is presented, after all of them
+// have been written.)
 static const uint16_t *col_tlut_for(const uint8_t *palrow)
 {
     int i;
@@ -402,9 +411,9 @@ static const uint16_t *col_tlut_for(const uint8_t *palrow)
     for (i = 0; i < col_ntluts; i++)
         if (col_tlut_src[i] == palrow)
             return col_tluts + i * 256;
-    // (A frame with more shade tables reuses the last one: slightly wrong
-    // shades, never seen in practice.)
-    i = (col_ntluts < COL_MAX_TLUTS) ? col_ntluts++ : COL_MAX_TLUTS - 1;
+    if (col_ntluts == COL_MAX_TLUTS)
+        return NULL;
+    i = col_ntluts++;
     col_tlut_src[i] = palrow;
     col_tlut_build(i);
     col_tlut_version = palette_version;
@@ -413,27 +422,33 @@ static const uint16_t *col_tlut_for(const uint8_t *palrow)
 
 #ifdef N64_PROFILE
 int n64_cols_added;
-static void n64p_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
+static int n64p_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
                   int col, int logw, uint32_t vplce, int32_t vince, int shift,
                   const uint8_t *palrow);
-void n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
+int n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
                   int col, int logw, uint32_t vplce, int32_t vince, int shift,
                   const uint8_t *palrow)
 {
+    int added;
     PROF_BEGIN(PROF_COLADD);
-    n64p_cols_add(sx, y1, y2, tile, tile_h, tile_w, col, logw, vplce, vince, shift, palrow);
+    added = n64p_cols_add(sx, y1, y2, tile, tile_h, tile_w, col, logw, vplce, vince, shift, palrow);
     PROF_END(PROF_COLADD);
-    n64_cols_added++;
+    n64_cols_added += added;
+    return added;
 }
 #define n64_cols_add n64p_cols_add
 static
 #endif
-void n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
+int n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
                   int col, int logw, uint32_t vplce, int32_t vince, int shift,
                   const uint8_t *palrow)
 {
     uint64_t *w = col_lw;
+    const uint16_t *pal = NULL;
     int32_t ds, sfx;
+
+    if (palrow != col_cur_pal && !(pal = col_tlut_for(palrow)))
+        return 0;   // no palette slot left: drawn on the CPU
 
     // Hole pass.
     *col_pw++ = rdp_coords(0x36, sx << 2, (y2 - 1) << 2, 0, sx << 2, y1 << 2);
@@ -448,7 +463,7 @@ void n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int t
         // SYNC_LOAD. Emulators run commands one at a time and never show it.)
         *w++ = RDP_SYNC_LOAD;
         *w++ = RDP_SYNC_TILE;
-        *w++ = rdp_image(0x3D, 0 /* RGBA */, 2 /* 16 bpp */, 256, col_tlut_for(palrow));
+        *w++ = rdp_image(0x3D, 0 /* RGBA */, 2 /* 16 bpp */, 256, pal);
         *w++ = rdp_set_tile(4, 0, 0, 0x100, 7, 0);
         *w++ = rdp_coords(0x30, 0, 0, 7, 255 << 2, 0);        // LOAD_TLUT
         col_cur_pal = palrow;
@@ -497,6 +512,7 @@ void n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int t
     *w++ = ((uint64_t)(uint16_t)sfx << 48) | ((uint64_t)(uint16_t)(col << 5) << 32) |
            ((uint64_t)(uint16_t)ds << 16);
     col_lw = w;
+    return 1;
 }
 
 void n64_cols_end(void)
@@ -689,7 +705,15 @@ static const uint16_t *ovl_tlut_for(const uint8_t *palrow, int masked,
     for (i = 0; i < *count; i++)
         if (srcs[i] == palrow && srcmask[i] == masked)
             return ovl_tluts + i * 256;
-    i = (*count < OVL_MAX_TLUTS) ? (*count)++ : OVL_MAX_TLUTS - 1;
+    if (*count == OVL_MAX_TLUTS)
+    {
+        // All taken: the RDP may not have loaded them yet. Once it has
+        // drawn what is queued, they can all be filled again (the caller
+        // sees *count go down and loads the palette again).
+        rspq_wait();
+        *count = 0;
+    }
+    i = (*count)++;
 
     buf = ovl_tluts + i * 256;
     for (j = 0; j < 256; j++)
@@ -750,7 +774,10 @@ static void draw_overlay(void)
             cur_translucent = translucent;
         }
 
+        k = ntluts;
         tl = ovl_tlut_for(it->pal, (it->flags & N64_OVL_MASKED) != 0, tlut_srcs, tlut_masked, &ntluts);
+        if (ntluts < k)
+            cur_tlut = NULL;    // the slots were filled again
         if (tl != cur_tlut)
         {
             rdpq_tex_upload_tlut((uint16_t *)tl, 0, 256);
@@ -1048,7 +1075,11 @@ void n64_wait_rdp(void)
     {
         if (get_ticks_ms() - start > 1000)
         {
+            // Going on would write what the RDP may still be reading. If it
+            // is hung, rspq_wait() stops on libdragon's crash screen with
+            // the RSP and RDP state; else it returns once the frame is done.
             debugf("n64_wait_rdp: RDP did not finish the frame in 1 s\n");
+            rspq_wait();
             rdp_done = 1;
         }
     }
@@ -1461,7 +1492,7 @@ void clear2dscreen(void)
  *     C-up            center view       L        use inventory item
  *     R + C-up/down   aim up/down       D-pad left/right  previous/next weapon
  *     D-pad up/down   previous/next inventory item
- *     Start           menu
+ *     Start           menu              R + Start  map (off, over the view, full)
  *
  * Every poll computes the set of keys that should be down and sends the
  * press/release scancodes for the ones that changed, so switching layouts or
@@ -1470,6 +1501,7 @@ void clear2dscreen(void)
 
 // Scancodes (extended ones in the 0xE0xx form).
 #define SC_ESCAPE       0x01
+#define SC_TAB          0x0F    // map
 #define SC_ENTER        0x1C
 #define SC_LCTRL        0x1D
 #define SC_A            0x1E
@@ -1492,7 +1524,7 @@ void clear2dscreen(void)
 #define SC_DOWN         0xE050
 
 static const uint32_t all_keys[] = {
-    SC_ESCAPE, SC_ENTER, SC_LCTRL, SC_A, SC_SEMICOLON, SC_QUOTE, SC_LSHIFT, SC_C, SC_Z,
+    SC_ESCAPE, SC_TAB, SC_ENTER, SC_LCTRL, SC_A, SC_SEMICOLON, SC_QUOTE, SC_LSHIFT, SC_C, SC_Z,
     SC_COMMA, SC_PERIOD, SC_SPACE, SC_LBRACKET, SC_RBRACKET, SC_KPAD5,
     SC_HOME, SC_UP, SC_LEFT, SC_RIGHT, SC_END, SC_DOWN,
 };
@@ -1509,6 +1541,10 @@ static uint8_t keys_down[NUM_KEYS];     // what the game currently sees
 #define STICK_TURN_MAX  40
 
 static int stick_x = 0;                 // last polled stick position
+// Start was pressed in game with R held: until it is released it is the
+// map key, whether R is let go first or not (else it would open the menu).
+static int start_is_map = 0;
+static int start_was_down = 0;          // Start at the last poll
 
 static void set_key(uint8_t *want, uint32_t scancode)
 {
@@ -1621,6 +1657,10 @@ void _handle_events(void)
 #endif
     stick_x = in.stick_x;
 
+    if (in.btn.start && !start_was_down)
+        start_is_map = in.btn.r && !n64_in_menu();
+    start_was_down = in.btn.start;
+
     if (n64_in_menu())
     {
         if (in.stick_y >  STICK_DEADZONE || in.btn.d_up)    set_key(want, SC_UP);
@@ -1656,7 +1696,7 @@ void _handle_events(void)
         if (in.btn.d_right) set_key(want, SC_QUOTE);
         if (in.btn.d_up)    set_key(want, SC_LBRACKET);
         if (in.btn.d_down)  set_key(want, SC_RBRACKET);
-        if (in.btn.start)   set_key(want, SC_ESCAPE);
+        if (in.btn.start)   set_key(want, start_is_map ? SC_TAB : SC_ESCAPE);
     }
 
     for (i = 0; i < NUM_KEYS; i++)
@@ -1748,6 +1788,9 @@ void fullscreen_toggle_and_change_driver(void)
  * ------------------------------------------------------------------------
  */
 
+int TIMER_GetPlatformTicksInOneSecond(int64_t* t);
+void TIMER_GetPlatformTicks(int64_t* t);
+
 void _platform_init(int argc, char  **argv, const char  *title, const char  *iconName)
 {
     int64_t timeElapsed;
@@ -1767,9 +1810,6 @@ void _platform_init(int argc, char  **argv, const char  *title, const char  *ico
  *  (Ken's timer logic from the SDL driver, fed by the N64 CPU counter.)
  * ------------------------------------------------------------------------
  */
-
-int TIMER_GetPlatformTicksInOneSecond(int64_t* t);
-void TIMER_GetPlatformTicks(int64_t* t);
 
 static int64_t timerfreq=0;
 static int32_t timerlastsample=0;

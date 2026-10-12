@@ -7,20 +7,38 @@ name: release
 # converted (soundfont, boot logo, menu backgrounds) and the host tools for
 # Windows and Linux. Drop in your own Duke Nukem 3D files, then run build.cmd /
 # tools/pack_rom.py -- no Docker, no N64 toolchain required.
+#
+# The v<VERSION> Release is the latest build of that version: a push that
+# does not change VERSION moves the tag to its commit and replaces the asset,
+# so that the tag, the code and the binaries always match.
 on:
   push:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
 
+# Only the release job writes (see its permissions).
 permissions:
-  contents: write
+  contents: read
+
+# One run per branch at a time; a pull request's new push cancels its old run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   bundle:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/dragonminded/libdragon:latest   # mips64-elf toolchain + $N64_INST
+      # mips64-elf toolchain + $N64_INST, pinned so that the build does not
+      # change under us: ghcr.io/dragonminded/libdragon:latest as of
+      # 2026-10-12 (n64brew/libdragon publishes no image yet). The library
+      # itself is built from the libdragon submodule.
+      image: ghcr.io/dragonminded/libdragon@sha256:9fe2843c9b7289393c1885be62391140e8b4cdb3edbc715f202dea16f554c5d2
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      asset: ${{ steps.stage.outputs.asset }}
 
     steps:
       - name: Install packaging deps
@@ -30,7 +48,7 @@ jobs:
             gcc g++ gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
 
       - name: Checkout (with submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
           fetch-depth: 0
@@ -44,6 +62,9 @@ jobs:
           VER="$(tr -d ' \r\n' < VERSION)"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "tag=v$VER"    >> "$GITHUB_OUTPUT"
+
+      - name: Host tests (save filesystem, sound file parsers)
+        run: make -C tests/host
 
       - name: Patch libdragon
         run: |
@@ -101,19 +122,65 @@ jobs:
           echo "asset=$NAME.zip" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ steps.stage.outputs.asset }}
           path: ${{ steps.stage.outputs.asset }}
           retention-days: 14
 
-      - name: Publish release
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
+  release:
+    needs: bundle
+    # Pushes to the main branch, or a manual run on it: never pull requests
+    # nor other branches.
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Point v${{ needs.bundle.outputs.version }} at this commit
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.bundle.outputs.tag }}
+        run: |
+          # The commit the tag points to, if it exists (any kind of tag).
+          SHA="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha 2>/dev/null || true)"
+          if [ -z "$SHA" ] || [ "$SHA" = "$GITHUB_SHA" ]; then
+            # New version (the release action creates the tag here), or a
+            # re-run of the same commit.
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Only forwards: a re-run of an older commit must not take the
+          # release back.
+          STATUS="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SHA}...${GITHUB_SHA}" --jq .status)"
+          if [ "$STATUS" != "ahead" ]; then
+            echo "::warning title=Release not updated::${TAG} is at ${SHA}, which this commit does not follow (${STATUS})."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" -f sha="$GITHUB_SHA" -F force=true --silent
+          echo "Moved ${TAG}: ${SHA} -> ${GITHUB_SHA}"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Download the bundle
+        if: steps.tag.outputs.publish == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          tag_name: ${{ steps.ver.outputs.tag }}
-          name: N64DukeNukem3DPort ${{ steps.ver.outputs.version }}
+          name: ${{ needs.bundle.outputs.asset }}
+
+      - name: Publish release
+        if: steps.tag.outputs.publish == 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.bundle.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: N64DukeNukem3DPort ${{ needs.bundle.outputs.version }}
           prerelease: true
           fail_on_unmatched_files: true
-          generate_release_notes: true
-          files: ${{ steps.stage.outputs.asset }}
+          overwrite_files: true             # the same asset name for every build of a version
+          generate_release_notes: true      # (only when the release is created)
+          files: ${{ needs.bundle.outputs.asset }}

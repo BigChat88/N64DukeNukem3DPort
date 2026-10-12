@@ -64,6 +64,9 @@
 // All game data lives in the DragonFS image appended to the ROM.
 #define N64_DATA_PREFIX "rom:/"
 
+// Size of an open file (n64_system.c; DOS had it, newlib does not).
+int32_t filelength(int fd);
+
 // Called by main() before anything touches the filesystem.
 void n64_early_init(void);
 // Replaces main()'s argc/argv with the arguments baked in at build time.

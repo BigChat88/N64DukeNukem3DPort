@@ -3,8 +3,9 @@
 
 // Mounts "save:/", the save files in the cartridge FlashRAM (n64_savefs.c).
 void n64_savefs_init(void);
-// True if the last save file written did not fit in the FlashRAM.
-int n64_savefs_full(void);
+// Why the last save file written could not be saved: ENOSPC (it does not
+// fit), ENOMEM, EIO (the FlashRAM failed); 0 if it was saved.
+int n64_savefs_error(void);
 
 // Plays the "powered by libdragon" dragon logo (n64_intro.c). Sets up and
 // closes its own display: call it before the game sets its video mode.

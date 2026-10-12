@@ -1255,7 +1255,7 @@ static void florscan (int32_t x1, int32_t x2, int32_t sectnum)
  * column further on when the frame's command lists fill up.
  */
 #ifdef N64_PROFILE
-int n64_wall_fallback[5];     // columns sent to the CPU, by reason
+int n64_wall_fallback[6];     // columns sent to the CPU, by reason
 #define WFB(r) (n64_wall_fallback[r] += x2 - x1 + 1)
 #else
 #define WFB(r) ((void)0)
@@ -1330,10 +1330,17 @@ static int32_t n64_rdpscan(int32_t x1, int32_t x2,
         vince = swal[x]*globalyscale;
         vplce = globalzd + vince*(y1-globalhoriz+1);
 
-        n64_cols_add(windowx1+x, windowy1+y1, windowy1+y2,
-                     tex, tsizy, tiles[globalpicnum].dim.width, col, logw,
-                     vplce, vince, shift,
-                     fpalookup+(getpalookup((int32_t)mulscale16(swal[x],globvis),globalshade)<<8));
+        if (!n64_cols_add(windowx1+x, windowy1+y1, windowy1+y2,
+                          tex, tsizy, tiles[globalpicnum].dim.width, col, logw,
+                          vplce, vince, shift,
+                          fpalookup+(getpalookup((int32_t)mulscale16(swal[x],globvis),globalshade)<<8)))
+        {
+            // No palette slot left for this shade: the rest goes to the CPU.
+            x1 = x;
+            WFB(5);
+            faketimerhandler();
+            return x;
+        }
     }
 
     faketimerhandler();
@@ -8871,7 +8878,7 @@ void makepalookup(int32_t palnum, uint8_t  *remapbuf, int8_t r,
     {
         /* Allocate palookup buffer */
         if ((palookup[palnum] = (uint8_t  *)kkmalloc(numpalookups<<8)) == NULL)
-            allocache((int32_t *)&palookup[palnum],numpalookups<<8,&permanentlock);
+            allocache(&palookup[palnum],numpalookups<<8,&permanentlock);
     }
 
     if (dastat == 0) return;

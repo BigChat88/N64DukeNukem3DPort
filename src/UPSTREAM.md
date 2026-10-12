@@ -53,6 +53,18 @@ marked with `PLATFORM_N64` / `N64`.
 - `game/config.c`: on the N64, 8 voices at 22,050 Hz (Chocolate forced 32 at 44,100 Hz)
   and no 0.75 s wait when reading the configuration.
 - `game/game.c`: the episode 1 ending animation read past the end of the `bossmove` array.
+- `game/game.c` (`spawn`, `WATERDRIP`): a drip with no parent sprite (`j = -1`) read
+  `sprite[-1].statnum`.
+- `game/actors.c` (the crane): it played the grunt of `ps[p]` before setting `p`, which
+  could read any address.
+- `game/gamedef.c` (`loadefs`): the CON text was ended by cutting its last two bytes (a
+  DOS CR LF); a file ending in `ends` followed by a single LF, or by nothing, lost part of
+  the keyword. Now only trailing blanks, line ends and `^Z` go (same result for the CR LF
+  files of the original and the expansions).
+- `game/premap.c`: the map shows what the player has seen (Build's `automapping`), not only
+  the sectors walked through and next to them, as Duke did.
+- `game/types.h`: `true`/`false` defined as in `<stdbool.h>` (same values), which some
+  files include as well.
 - `engine/fixedPoint_math.c`: `clearbufbyte` repeats the pattern in the machine's byte
   order (it assumed little-endian: on the N64 the wall column limits, `mostbuf`, had their
   bytes swapped and pieces of wall showed up where they should not).
@@ -64,6 +76,10 @@ marked with `PLATFORM_N64` / `N64`.
   recompiled at boot; the CON CRC is part of the version, `SAVE_BYTEVERSION`); only the
   walls and sectors in use; free sprites and actors zeroed; `dfwrite`/`dfread` keep the
   delta encoding but without the LZW (misaligned reads).
+- Settings on the N64 (`game/config.c`, `game/game.c`): there is no `DUKE3D.CFG`; the
+  menu settings (volumes, brightness, screen size, aiming...) are kept in
+  `save:/settings.dat`, written when the menus change page or close and something changed
+  (`CONFIG_N64PollSettings`, after each `menus()`).
 - `game/game.c` (`animatesprites`): an actor's current action was recognized with
   `t4 > 10000`, which on the N64 (addresses 0x80xxxxxx, negative as `int32`) was never
   true: action frames (walking, dying...) were not applied. Now it checks that the address

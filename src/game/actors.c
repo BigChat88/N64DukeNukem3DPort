@@ -1594,8 +1594,15 @@ void movestandables(void)
                         {
                             if(s->owner==-2)
                             {
+#if PLATFORM_N64
+                                // (The original played the grunt of ps[p]
+                                // before setting p: any address.)
+                                p = findplayer(s,&x);
+                                spritesound(DUKE_GRUNT,ps[p].i);
+#else
                                 spritesound(DUKE_GRUNT,ps[p].i);
                                 p = findplayer(s,&x);
+#endif
                                 if(ps[p].on_crane == i)
                                     ps[p].on_crane = -1;
                             }

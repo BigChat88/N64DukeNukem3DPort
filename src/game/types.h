@@ -71,8 +71,9 @@ typedef float64                 appfloat;
 //
 //***************************************************************************
 
-#define true ( 1 == 1 )
-#define false ( ! true )
+// The same as <stdbool.h>, which may be included as well.
+#define true 1
+#define false 0
 
 //***************************************************************************
 //

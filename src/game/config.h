@@ -41,4 +41,11 @@ void CONFIG_ReadSetup( void );
 void CONFIG_GetSetupFilename( void );
 void CONFIG_WriteSetup( void );
 
+// N64: the settings of the menus, kept in save:/settings.dat (config.c).
+// (Declared everywhere: files include this before PLATFORM_N64 is defined.)
+void CONFIG_N64LoadSettings( void );
+// After menus(): saves them when the menus change page or close and they
+// changed since they were loaded or last saved.
+void CONFIG_N64PollSettings( void );
+
 #endif

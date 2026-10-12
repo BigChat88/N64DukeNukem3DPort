@@ -69,8 +69,9 @@ int n64_cols_use_tile(const uint8_t *data, int32_t size, uint8_t *lock);
 // column col and, like BUILD, wraps every 2^logw texels (reading past the
 // column when the tile height is not a power of two). The texel at row y is
 // ((vplce + vince * (y - y1)) >> shift), and palrow is the column's 256 byte
-// shade table.
-void n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
+// shade table. Returns 0 if it cannot be recorded (too many shade tables in
+// the frame): the caller then draws the column on the CPU.
+int n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
                   int col, int logw, uint32_t vplce, int32_t vince, int shift,
                   const uint8_t *palrow);
 

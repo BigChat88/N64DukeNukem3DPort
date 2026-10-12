@@ -1652,7 +1652,26 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 		ud.conCRC[0] = crc32_update((uint8_t  *)textptr, fs, ud.conCRC[0]);
     }
 
-#ifdef PLATFORM_UNIX
+#if PLATFORM_N64
+    // The text has to end inside the file: the included files are read
+    // right after it. DOS cut the last two bytes (a CR LF), which of a file
+    // ending in "ends" + LF, or in "ends", took part of the keyword. Here
+    // the blanks, line ends and ^Z at the end go; a file with none ends past
+    // its last byte, and the included files go one byte further.
+    {
+        int32_t end = fs;
+        while (end > 0 && (textptr[end-1] == '\r' || textptr[end-1] == '\n' || textptr[end-1] == ' ' ||
+                           textptr[end-1] == '\t' || textptr[end-1] == 0x1A))
+            end--;
+        if (end < fs)
+            textptr[end] = 0;
+        else
+        {
+            textptr[fs] = 0;
+            last_used_size = fs + 1;
+        }
+    }
+#elif defined(PLATFORM_UNIX)
     textptr[fs - 1] = 0;
 #else
     textptr[fs - 2] = 0;

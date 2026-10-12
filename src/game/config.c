@@ -803,8 +803,167 @@ void CONFIG_ReadSetup( void )
 				CONFIG_SetupMouse(scripthandle);
 			}
       }
+#if PLATFORM_N64
+   CONFIG_N64LoadSettings();
+#endif
    setupread = 1;
    }
+
+#if PLATFORM_N64
+/*
+ * N64: there is no DUKE3D.CFG (the ROM filesystem is read-only, and the
+ * game is never quit to write it). The settings of the menus are kept in a
+ * small file of the cartridge save memory instead, written whenever the
+ * menus change page or close and something changed: a FlashRAM write
+ * takes a moment, too long to do on every change of a slider.
+ */
+#define N64_SETTINGS_FILE    N64_SAVE_PREFIX "settings.dat"
+#define N64_SETTINGS_VERSION 1
+
+typedef struct
+{
+    char  magic[4];         // "DKCF"
+    int32_t version;        // N64_SETTINGS_VERSION
+    int32_t shadows, detail, screen_tilting, fta_on, lockout, tickrate;
+    int32_t screen_size, extended_screen_size, brightness;
+    int32_t auto_run, crosshair, showcinematics, hideweapon, showweapons;
+    int32_t weaponautoswitch, auto_aim, mouseflip, aim_mode, aimmode;
+    int32_t mywchoice[10];
+    int32_t fxvolume, musicvolume, soundtoggle, voicetoggle, ambiencetoggle;
+    int32_t musictoggle, reversestereo;
+    char  pwlockout[128];
+} n64_settings_t;
+
+static n64_settings_t n64_settings_saved;   // what save:/ holds (or the defaults)
+static int n64_settings_menu = -1;          // menu page at the last poll, -1: none
+
+static void n64_settings_get(n64_settings_t *s)
+{
+    int i;
+
+    memset(s, 0, sizeof(*s));
+    memcpy(s->magic, "DKCF", 4);
+    s->version = N64_SETTINGS_VERSION;
+    s->shadows = ud.shadows;
+    s->detail = ud.detail;
+    s->screen_tilting = ud.screen_tilting;
+    s->fta_on = ud.fta_on;
+    s->lockout = ud.lockout;
+    s->tickrate = ud.tickrate & 1;
+    s->screen_size = ud.screen_size;
+    s->extended_screen_size = ud.extended_screen_size;
+    s->brightness = ud.brightness;
+    s->auto_run = ud.auto_run;
+    s->crosshair = ud.crosshair;
+    s->showcinematics = ud.showcinematics;
+    s->hideweapon = ud.hideweapon;
+    s->showweapons = ud.showweapons;
+    s->weaponautoswitch = ud.weaponautoswitch;
+    s->auto_aim = ud.auto_aim;
+    s->mouseflip = ud.mouseflip;
+    s->aim_mode = ps[myconnectindex].aim_mode;
+    s->aimmode = myaimmode;
+    for (i = 0; i < 10; i++)
+        s->mywchoice[i] = ud.mywchoice[i];
+    s->fxvolume = FXVolume;
+    s->musicvolume = MusicVolume;
+    s->soundtoggle = SoundToggle;
+    s->voicetoggle = VoiceToggle;
+    s->ambiencetoggle = AmbienceToggle;
+    s->musictoggle = MusicToggle;
+    s->reversestereo = ReverseStereo;
+    memcpy(s->pwlockout, ud.pwlockout, sizeof(s->pwlockout));
+    s->pwlockout[sizeof(s->pwlockout) - 1] = 0;
+}
+
+static void n64_settings_set(const n64_settings_t *s)
+{
+    int i;
+
+    ud.shadows = s->shadows;
+    ud.detail = s->detail;
+    ud.screen_tilting = s->screen_tilting;
+    ud.fta_on = s->fta_on;
+    ud.lockout = s->lockout;
+    ud.tickrate = s->tickrate & 1;
+    ud.screen_size = s->screen_size;
+    ud.extended_screen_size = s->extended_screen_size;
+    ud.brightness = s->brightness;
+    ud.auto_run = s->auto_run;
+    ud.crosshair = s->crosshair;
+    ud.showcinematics = s->showcinematics;
+    ud.hideweapon = s->hideweapon;
+    ud.showweapons = s->showweapons;
+    ud.weaponautoswitch = s->weaponautoswitch;
+    ud.auto_aim = (s->auto_aim == 1 || s->auto_aim == 2) ? s->auto_aim : 2;
+    ud.mouseflip = s->mouseflip;
+    ps[myconnectindex].aim_mode = s->aim_mode;
+    myaimmode = s->aimmode;
+    for (i = 0; i < 10; i++)
+        ud.mywchoice[i] = s->mywchoice[i];
+    FXVolume = max(0, min(s->fxvolume, 255));
+    MusicVolume = max(0, min(s->musicvolume, 255));
+    SoundToggle = s->soundtoggle;
+    VoiceToggle = s->voicetoggle;
+    AmbienceToggle = s->ambiencetoggle;
+    MusicToggle = s->musictoggle;
+    ReverseStereo = s->reversestereo;
+    memcpy(ud.pwlockout, s->pwlockout, sizeof(s->pwlockout));
+    ud.pwlockout[sizeof(s->pwlockout) - 1] = 0;
+}
+
+void CONFIG_N64LoadSettings( void )
+{
+    n64_settings_t s;
+    FILE *f = fopen(N64_SETTINGS_FILE, "rb");
+
+    if (f)
+    {
+        if (fread(&s, sizeof(s), 1, f) == 1 && memcmp(s.magic, "DKCF", 4) == 0 &&
+            s.version == N64_SETTINGS_VERSION)
+        {
+            n64_settings_set(&s);
+            printf("settings: loaded from %s\n", N64_SETTINGS_FILE);
+        }
+        fclose(f);
+    }
+    n64_settings_get(&n64_settings_saved);
+}
+
+static void n64_settings_save(void)
+{
+    n64_settings_t s;
+    FILE *f;
+    int ok;
+
+    n64_settings_get(&s);
+    if (memcmp(&s, &n64_settings_saved, sizeof(s)) == 0)
+        return;
+    f = fopen(N64_SETTINGS_FILE, "wb");
+    if (!f)
+        return;
+    ok = fwrite(&s, sizeof(s), 1, f) == 1;
+    if (fclose(f) != 0)     // (the FlashRAM is written here)
+        ok = 0;
+    if (ok)
+    {
+        n64_settings_saved = s;
+        printf("settings: saved\n");
+    }
+    else
+        printf("settings: could not be saved\n");
+}
+
+void CONFIG_N64PollSettings( void )
+{
+    int menu = (ps[myconnectindex].gm & MODE_MENU) ? current_menu : -1;
+
+    if (menu == n64_settings_menu)
+        return;
+    n64_settings_menu = menu;
+    n64_settings_save();
+}
+#endif
 
 /*
 ===================

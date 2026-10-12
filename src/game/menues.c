@@ -38,6 +38,7 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 #include "n64_columns.h"
 #endif
 #if PLATFORM_N64
+#include <errno.h>
 #include "n64_platform.h"
 int n64_addon_volumes(int *vols);
 static int n64_level_is_final(void);
@@ -853,7 +854,15 @@ int saveplayer(int8_t spot)
 #endif
 	}
 
-     if ((fil = fopen(fullpathsavefilename,"wb")) == 0) return(-1);
+     if ((fil = fopen(fullpathsavefilename,"wb")) == 0)
+     {
+#if PLATFORM_N64
+         // (No save:/ when the cartridge has no FlashRAM, see n64_savefs.c.)
+         strcpy(fta_quotes[122], errno == ENOMEM ? "SAVE FAILED: OUT OF MEMORY" : "SAVE FAILED: NO FLASHRAM");
+         FTA(122,&ps[myconnectindex],1);
+#endif
+         return(-1);
+     }
 
      ready2send = 0;
 
@@ -1045,7 +1054,9 @@ int saveplayer(int8_t spot)
      // The cartridge save memory is small: the save is refused when it is full.
      if (fclose(fil) != 0)
      {
-         strcpy(fta_quotes[122],"NOT ENOUGH SAVE SPACE");
+         strcpy(fta_quotes[122], n64_savefs_error() == EIO    ? "SAVE FAILED: FLASHRAM ERROR" :
+                                 n64_savefs_error() == ENOMEM ? "SAVE FAILED: OUT OF MEMORY" :
+                                                                "NOT ENOUGH SAVE SPACE");
          FTA(122,&ps[myconnectindex],1);
          ready2send = 1;
          totalclock = ototalclock;

@@ -1556,7 +1556,14 @@ if (!VOLUMEONE)
 #endif
 
 
+#if PLATFORM_N64
+    // The map also shows what has been seen, not only where the player has
+    // walked (displayrest): Build's automapping marks the sectors, walls
+    // and sprites drawn.
+    automapping = 1;
+#else
     automapping = 0;
+#endif
 
     if(ud.recstat != 2) MUSIC_StopSong();
 

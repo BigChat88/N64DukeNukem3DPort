@@ -2933,6 +2933,7 @@ void displayrest(int32_t smoothratio)
             menus();
 #if PLATFORM_N64
             n64_overlay_capture(0);
+            CONFIG_N64PollSettings();
 #endif
             PROF_END(PROF_MENUS);
         }
@@ -4572,7 +4573,13 @@ short spawn( short j, short pn )
                 break;
 
             case WATERDRIP:
+#if PLATFORM_N64
+                // (The original also read sprite[-1].statnum for a drip
+                // with no parent sprite, j = -1.)
+                if(j >= 0 && (sprite[j].statnum == 10 || sprite[j].statnum == 1))
+#else
                 if((j >= 0 && sprite[j].statnum == 10) || sprite[j].statnum == 1)
+#endif
                 {
                     sp->shade = 32;
                     if(sprite[j].pal != 1)
@@ -9262,6 +9269,7 @@ int32_t playback(void)
             menus();
 #if PLATFORM_N64
             n64_overlay_capture(0);
+            CONFIG_N64PollSettings();
 #endif
         }
         CONSOLE_Render();
@@ -9370,6 +9378,7 @@ int32_t playback(void)
                 menus();
 #if PLATFORM_N64
                 n64_overlay_capture(0);
+                CONFIG_N64PollSettings();
 #endif
             }
             CONSOLE_Render();

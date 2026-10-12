@@ -44,7 +44,9 @@ SRCS = $(addprefix src/engine/,$(ENGINE_SRC)) \
        $(addprefix src/n64/,$(N64_SRC))
 OBJS = $(SRCS:src/%.c=$(BUILD_DIR)/%.o)
 
-# Upstream note: starting a new game crashes if premap.c is optimized.
+# Upstream note: starting a new game crashes if premap.c is optimized. The
+# cause is not known (no warning points at it at -O2). premap.c only runs
+# while a level loads, so -O0 costs nothing during play.
 $(BUILD_DIR)/game/premap.o: CFLAGS += -O0
 
 # The renderer: -O3 measured ~1 ms per frame better than -O2 in ares, which is
@@ -65,6 +67,20 @@ N64_CFLAGS += -U__INT32_TYPE__ -D__INT32_TYPE__=int \
               -Wno-unused -Wno-pointer-sign -Wno-parentheses -Wno-char-subscripts \
               -Wno-missing-braces -Wno-maybe-uninitialized -Wno-implicit-function-declaration \
               -Wno-int-conversion -Wno-incompatible-pointer-types
+
+# The N64 platform layer (src/n64) is new code: none of that, and its
+# warnings are errors.
+N64_STRICT_CFLAGS = -Werror -Wimplicit-function-declaration -Wint-conversion \
+                    -Wincompatible-pointer-types -Wmaybe-uninitialized -Wparentheses \
+                    -Wmissing-braces -Wunused-variable
+$(BUILD_DIR)/n64/%.o: CFLAGS += $(N64_STRICT_CFLAGS)
+
+# Audit of the old code: make WARNINGS=1 BUILD_DIR=build/warnings engine
+# shows the warnings turned off above (builds into its own folder).
+ifneq ($(WARNINGS),)
+N64_CFLAGS += -Wimplicit-function-declaration -Wint-conversion -Wincompatible-pointer-types \
+              -Wmaybe-uninitialized -Wparentheses -Wchar-subscripts -Wmissing-braces -Wunused-variable
+endif
 
 N64_ROM_TITLE = "Duke Nukem 3D"
 N64_ROM_SAVETYPE = flashram

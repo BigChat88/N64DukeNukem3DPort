@@ -260,6 +260,8 @@ static int parse_voc(fx_voice_t *v, const uint8_t *ptr)
             break;
         len = read_le24(h + 1);
         data = off + 4;
+        if (src.size && data + len > (uint32_t)src.size)
+            len = src.size - data;      // a truncated file: what there is of it
 
         switch (type)
         {
@@ -347,6 +349,11 @@ static int parse_wav(fx_voice_t *v, const uint8_t *ptr)
         }
         else if (strncmp((const char *)h, "data", 4) == 0 && have_fmt)
         {
+            // Some writers leave the size of the data unset (0xFFFFFFFF):
+            // never past the end of the RIFF (the file's size for a sound
+            // streamed from ROM).
+            if (size > end - (off + 8))
+                size = end - (off + 8);
             v->seg[0] = src_segment(&src, off + 8, size / (v->bits / 8));
             v->numseg = 1;
             break;
@@ -633,7 +640,7 @@ int FX_Init(int SoundCard, int numvoices, int numchannels, int samplebits, unsig
     if (fx_installed)
         FX_Shutdown();
 
-    num_voices = max(1, min(numvoices, MIXER_MAX_CHANNELS - N64_MUSIC_CHANNELS));
+    num_voices = max(1, min(min(numvoices, FX_MAX_VOICES), MIXER_MAX_CHANNELS - N64_MUSIC_CHANNELS));
     memset(voices, 0, sizeof(voices));
 
     calc_pan_table();   // (pitch.c's table is precomputed: no PITCH_Init)
