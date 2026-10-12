@@ -146,8 +146,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.bundle.outputs.tag }}
         run: |
-          # The commit the tag points to, if it exists (any kind of tag).
-          SHA="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha 2>/dev/null || true)"
+          # The commit the tag points to, if it exists (any kind of tag). (A
+          # missing tag is an HTTP error whose JSON gh prints on stdout: only
+          # a successful call that gives a SHA counts.)
+          if ! SHA="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha 2>/dev/null)" ||
+             ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            SHA=""
+          fi
           if [ -z "$SHA" ] || [ "$SHA" = "$GITHUB_SHA" ]; then
             # New version (the release action creates the tag here), or a
             # re-run of the same commit.

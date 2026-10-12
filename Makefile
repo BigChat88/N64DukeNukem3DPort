@@ -188,8 +188,20 @@ endif
 ifneq ($(LEVELCYCLE),)
 N64_CFLAGS += -DN64_TEST_LEVELCYCLE=$(LEVELCYCLE)
 endif
+# Benchmark (see "Measuring performance" in the README): make BENCH=20
+# Every level in turn for that many seconds, the player (who never dies)
+# turning in place where the level starts: the same views on every run, and
+# one "bench:" line per level in the log. Boots into E1L1 unless ARGS says
+# otherwise (an expansion's ROM: ARGS="/v2 /l1" for Nuclear Winter, /v3 the others).
+ifneq ($(BENCH),)
+N64_CFLAGS += -DN64_TEST_BENCH -DN64_TEST_GOD
+ifeq ($(LEVELSKIP),)
+N64_CFLAGS += -DN64_TEST_LEVELSKIP=$(BENCH)
+endif
+ARGS ?= /v1 /l1
+endif
 
-BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE)
+BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE) bench=$(BENCH)
 $(shell mkdir -p $(BUILD_DIR); echo '$(BUILD_OPTIONS)' | cmp -s - $(BUILD_DIR)/options.txt || echo '$(BUILD_OPTIONS)' > $(BUILD_DIR)/options.txt)
 $(OBJS): $(BUILD_DIR)/options.txt
 

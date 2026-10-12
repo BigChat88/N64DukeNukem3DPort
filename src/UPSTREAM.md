@@ -61,6 +61,10 @@ marked with `PLATFORM_N64` / `N64`.
   DOS CR LF); a file ending in `ends` followed by a single LF, or by nothing, lost part of
   the keyword. Now only trailing blanks, line ends and `^Z` go (same result for the CR LF
   files of the original and the expansions).
+- `engine/engine.c` (`clippoly`): the left-edge pass of the textured map's polygon clipping
+  copied the next point instead of the current one (a Chocolate Duke3D slip; BUILD and the
+  other three passes take the current one): every sector cut by the left edge of the screen
+  was drawn as wrong triangles, leaving black gaps and painting over its neighbours.
 - `game/premap.c`: the map shows what the player has seen (Build's `automapping`), not only
   the sectors walked through and next to them, as Duke did.
 - `game/types.h`: `true`/`false` defined as in `<stdbool.h>` (same values), which some

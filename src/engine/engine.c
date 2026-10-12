@@ -9089,8 +9089,12 @@ static int clippoly (int32_t npoints, int32_t clipstat)
                 s1 = s2;
                 s2 = cx1-pvWalls[zz].cameraSpaceCoo[0][VEC_X];
                 if (s1 < 0){
-                    pvWalls[npoints2].cameraSpaceCoo[1][VEC_X] = pvWalls[zz].cameraSpaceCoo[0][VEC_X];
-                    pvWalls[npoints2].cameraSpaceCoo[1][VEC_Y] = pvWalls[zz].cameraSpaceCoo[0][VEC_Y];
+                    // (The current point z, as in the three other passes and
+                    // in BUILD's original: Chocolate Duke3D took the next one,
+                    // zz, which bent every polygon cut by the left edge of the
+                    // textured map into wrong triangles.)
+                    pvWalls[npoints2].cameraSpaceCoo[1][VEC_X] = pvWalls[z].cameraSpaceCoo[0][VEC_X];
+                    pvWalls[npoints2].cameraSpaceCoo[1][VEC_Y] = pvWalls[z].cameraSpaceCoo[0][VEC_Y];
                     pvWalls[npoints2].screenSpaceCoo[1][VEC_COL] = npoints2+1;
                     npoints2++;
                 }
