@@ -391,12 +391,39 @@ static int parse_wav(fx_voice_t *v, const uint8_t *ptr)
  *    sound peaking near full scale (90% of Duke's) crackles at any volume.
  *    Louder ones are scaled down to FX_PEAK and their channel volume is
  *    raised by as much (fx_resident_t.gain), so they keep their loudness;
- *  - a few samples to read past the end: the end is moved back to the last
- *    full cache line, and a sound that does not loop fades out over its last
- *    FX_TAIL_FADE samples (some end on a loud sample: a click).
+ *  - valid samples past the end: within a round of mixing, the RSP plays up
+ *    to MIXER_LOOP_OVERREAD bytes past it before it notices the end. Those
+ *    are taken from the end of the sound and filled with silence (after a
+ *    fade out over FX_TAIL_FADE samples), or with its start if it loops.
+ *    Otherwise whatever the cache put next was heard at the end of every
+ *    sound: a click, once another file was loaded right after it.
+ *
+ * How these were found (0.2.0), in case the crackle comes back. Each fix of
+ * the list above removed part of it, and what was left kept misleading:
+ *  - It sounded like clipping, but lowering the music, the effects or the
+ *    master volume changed nothing: it was not saturation.
+ *  - The 16 byte boundary must hold in memory, not within the file: the
+ *    cache handed out 8-byte aligned blocks, so samples aligned in the file
+ *    were not (the cache now starts on a 16 byte boundary, engine/tiles.c,
+ *    and make_resident aligns the address itself).
+ *  - The game started clean and the effects clicked only after entering a
+ *    submenu, then for good: the click was at the *end* of each effect.
+ *    Entering the submenu loads its "accept" sound into the cache right after
+ *    the cursor sound; from then on the cursor sound's overread played the
+ *    rest of its file and the other sound's header. Before, that memory was
+ *    zero, and silent. It also happened in ares, which is how it was found.
+ *  - The way to see it: write the mixer's output to the log (the buffers
+ *    from audio_write_begin(), which hold what the AI played, as hex) with the
+ *    music muted, turn it into a WAV, and compare the same effect played
+ *    before and after the change of state, sample by sample. The bad plays
+ *    were longer than the good ones and ended on a loud sample.
+ * tests/host/test_fx.c (test_resident) checks all of the above on a file
+ * that is not 16-byte aligned: format, alignment in memory, peak, length,
+ * fade and the overread bytes.
  */
 #define FX_RESIDENT_MAGIC  "N64FXRS"         // (short: the descriptor must fit before the samples)
 #define FX_TAIL_FADE       64
+#define FX_OVERREAD        MIXER_LOOP_OVERREAD     // bytes the RSP may read past the end
 typedef struct {
     char magic[8];
     uint32_t rate;
@@ -444,7 +471,7 @@ static inline void sample_put(uint8_t *data, int bits, uint32_t i, int s)
 static void make_resident(fx_voice_t *v, uint8_t *ptr, int looped)
 {
     fx_resident_t r;
-    uint32_t from, to, bytes, len, i;
+    uint32_t from, to, bytes, keep, len, i;
     int bps = v->bits / 8, peak = 0, limit = v->bits == 8 ? FX_PEAK : FX_PEAK << 8;
     uint8_t *data;
 
@@ -455,11 +482,16 @@ static void make_resident(fx_voice_t *v, uint8_t *ptr, int looped)
     from = v->seg[0].data - ptr;
     to = (((uintptr_t)ptr + from) & ~(uintptr_t)15) - (uintptr_t)ptr;
     len = v->seg[0].len;
-    if ((int32_t)to < (int32_t)sizeof(r) || len < 64)
-        return;
     bytes = len * bps;
     data = ptr + to;
-    memmove(data, ptr + from, bytes);
+    // The end: back to the last cache line of its own (data + bytes, before
+    // the move, rounded down), less the FX_OVERREAD bytes the RSP reads past
+    // it, which are filled here.
+    keep = (((uintptr_t)ptr + from + bytes) & ~(uintptr_t)15) - FX_OVERREAD - (uintptr_t)data;
+    if ((int32_t)to < (int32_t)sizeof(r) || (int32_t)keep < 2 * FX_TAIL_FADE * bps)
+        return;
+    memmove(data, ptr + from, keep);
+    len = keep / bps;
 
     // Signed, native order; the peak.
     for (i = 0; i < len; i++)
@@ -477,16 +509,18 @@ static void make_resident(fx_voice_t *v, uint8_t *ptr, int looped)
             sample_put(data, v->bits, i, sample_get(data, v->bits, i) * limit / peak);
         r.gain = (peak * 256 + limit - 1) / limit;
     }
-    // The end: back to the last cache line of its own, with a line to spare
-    // for the resampler to read past it; faded out unless it loops.
-    if (!looped)
+    // What the RSP reads past the end: the start again for a loop, else
+    // silence after a fade out (some sounds end on a loud sample: a click).
+    if (looped)
+        memcpy(data + keep, data, FX_OVERREAD);
+    else
     {
-        len = ((((uintptr_t)data + len * bps) & ~(uintptr_t)15) - 16 - (uintptr_t)data) / bps;
-        for (i = 0; i < FX_TAIL_FADE && len >= 2 * FX_TAIL_FADE; i++)
+        for (i = 0; i < FX_TAIL_FADE; i++)
             sample_put(data, v->bits, len - 1 - i,
                        sample_get(data, v->bits, len - 1 - i) * (int)i / FX_TAIL_FADE);
+        memset(data + keep, 0, FX_OVERREAD);
     }
-    data_cache_hit_writeback(data, bytes);     // the RSP reads it from RDRAM
+    data_cache_hit_writeback(data, keep + FX_OVERREAD);    // the RSP reads it from RDRAM
 
     memset(&r.magic, 0, sizeof(r.magic));
     memcpy(r.magic, FX_RESIDENT_MAGIC, sizeof(r.magic));

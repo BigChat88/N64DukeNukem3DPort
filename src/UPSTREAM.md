@@ -107,6 +107,9 @@ marked with `PLATFORM_N64` / `N64`.
 - `engine/engine.c` (`drawsprite`, `drawmasks`): opaque wall sprites (fences, signs) that no
   nearer sprite drawn on the CPU overlaps are drawn by the RDP over the frame, as masked
   columns (`n64_maskwallscan_rdp`, `n64_overlay_columns_begin`) instead of `maskwallscan`.
+  Masked walls as well (`drawmaskwall`): on the N64, `drawmasks` first works out the order
+  in which the original interleaves sprites and masked walls, then sends to the RDP each
+  one that nothing drawn on the CPU after it covers (`n64_drawmasks_ordered`).
 - `engine/tiles.c`: on the N64, textures are written back from the CPU cache when loaded,
   and the cache starts on a 16 byte boundary (the RSP mixer plays the sounds in it from
   there, and 8-bit samples not aligned to 16 crackle).

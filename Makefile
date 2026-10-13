@@ -172,6 +172,10 @@ endif
 ifneq ($(RDP_WALL_SPRITES),)
 N64_CFLAGS += -DN64_RDP_WALL_SPRITES=$(RDP_WALL_SPRITES)
 endif
+# Masked walls (fences, grates) the same way, on by default: RDP_MASK_WALLS=0.
+ifneq ($(RDP_MASK_WALLS),)
+N64_CFLAGS += -DN64_RDP_MASK_WALLS=$(RDP_MASK_WALLS)
+endif
 
 # Options that change every object: rebuild everything when they change,
 # instead of linking objects built with different settings.
@@ -209,7 +213,7 @@ endif
 ARGS ?= /v1 /l1
 endif
 
-BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE) bench=$(BENCH) shots=$(SHOTS) rdp_wall_sprites=$(RDP_WALL_SPRITES)
+BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE) bench=$(BENCH) shots=$(SHOTS) rdp_wall_sprites=$(RDP_WALL_SPRITES) rdp_mask_walls=$(RDP_MASK_WALLS)
 $(shell mkdir -p $(BUILD_DIR); echo '$(BUILD_OPTIONS)' | cmp -s - $(BUILD_DIR)/options.txt || echo '$(BUILD_OPTIONS)' > $(BUILD_DIR)/options.txt)
 $(OBJS): $(BUILD_DIR)/options.txt
 

@@ -285,8 +285,9 @@ static void test_voc_truncated(void)
 /*
  * Sounds in memory are converted once, in place, to the mixer's format
  * (signed 8-bit, big endian 16-bit) at a 16 byte aligned offset, scaled
- * under the resampler's limit with the channel volume making up for it, the
- * end of one that does not loop faded and kept off the last cache line:
+ * under the resampler's limit with the channel volume making up for it, with
+ * what the RSP reads past the end filled in, the end of one that does not
+ * loop faded:
  * played again, they are found converted.
  */
 static void test_resident(void)
@@ -335,9 +336,18 @@ static void test_resident(void)
             fail("case %d: samples not 16 byte aligned in memory", k);
         if (v.bits != bits)
             fail("case %d: %d bits", k, v.bits);
-        if (looped ? total_length(&v) != len
-                   : (((uintptr_t)file + from + len * (bits / 8)) & ~(uintptr_t)15) - 16 < (uintptr_t)v.seg[0].data + total_length(&v) * (bits / 8))
-            fail("case %d: %d samples of %d kept (loops: %d)", k, total_length(&v), len, looped);
+        {
+            // It ends MIXER_LOOP_OVERREAD bytes before the last cache line of
+            // its own, and those bytes hold what the RSP may play past the
+            // end: silence, or the start again for a loop.
+            uintptr_t own = ((uintptr_t)file + from + len * (bits / 8)) & ~(uintptr_t)15;
+            const uint8_t *end = v.seg[0].data + total_length(&v) * (bits / 8);
+            if ((uintptr_t)end + MIXER_LOOP_OVERREAD != own)
+                fail("case %d: %d samples of %d kept (loops: %d)", k, total_length(&v), len, looped);
+            for (i = 0; i < MIXER_LOOP_OVERREAD; i++)
+                if (end[i] != (looped ? v.seg[0].data[i] : 0))
+                    fail("case %d: byte %d past the end is %d", k, i, end[i]);
+        }
         if (peak > limit ? fabsf(v.gain - (float)peak / limit) > 0.01f : v.gain != 1.0f)
             fail("case %d: gain %f for a peak of %d", k, v.gain, peak);
         for (i = 0; i < total_length(&v) - (looped ? 0 : FX_TAIL_FADE); i++)

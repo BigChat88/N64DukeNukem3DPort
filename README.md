@@ -133,7 +133,7 @@ tag, the code and the binaries always match. Pull requests only build and test.
 | C-left / C-right | Strafe |
 | C-down | Crouch |
 | C-up | Center the view |
-| R + C-up / C-down | Look (aim) up / down |
+| R + C-up / C-down | Look (aim) up / down, with R pressed first (crouching and then pressing R only opens) |
 | L | Use the inventory item |
 | D-pad left / right | Previous / next weapon |
 | D-pad up / down | Previous / next item |
@@ -156,6 +156,8 @@ tag, the code and the binaries always match. Pull requests only build and test.
 - A normal build (without `ARGS`/`INPUT`) never keeps those test options.
 - `libdragon make RDP_WALL_SPRITES=0`: opaque wall sprites (fences) are drawn on the CPU
   again (by default the RDP draws them when nothing nearer drawn on the CPU covers them).
+- `libdragon make RDP_MASK_WALLS=0`: the same for masked walls (bars, grates), which by
+  default the RDP draws on the same terms.
 - `libdragon make RDP_COLUMNS=0`: walls and sky are drawn on the CPU again (by default the
   RDP draws them, see `src/n64/n64_columns.h`), for comparison.
 - `libdragon make GOD=1`: the player does not die (for measuring: the dead player's view is

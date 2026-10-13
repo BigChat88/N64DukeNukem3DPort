@@ -5194,6 +5194,11 @@ int ksqrt(int32_t num)
 
 
 
+#if defined(PLATFORM_N64) && N64_RDP_COLUMNS
+static int n64_maskwallscan_rdp(int32_t x1, int32_t x2,
+                                short *uwal, short *dwal,
+                                int32_t *swal, int32_t *lwal);
+#endif
 #ifdef N64_PROFILE
 #define drawmaskwall n64p_drawmaskwall
 #endif
@@ -5306,7 +5311,15 @@ static void drawmaskwall(short damaskwallcnt)
         }
 
     if ((globalorientation&128) == 0)
+    {
+#if defined(PLATFORM_N64) && N64_RDP_COLUMNS
+        // (n64_drawmasks_ordered decides which ones the RDP may draw.)
+        if (n64_sprite_rdp &&
+            n64_maskwallscan_rdp(pvWalls[z].screenSpaceCoo[0][VEC_COL],pvWalls[z].screenSpaceCoo[1][VEC_COL],uwall,dwall,swall,lwall))
+            return;
+#endif
         maskwallscan(pvWalls[z].screenSpaceCoo[0][VEC_COL],pvWalls[z].screenSpaceCoo[1][VEC_COL],uwall,dwall,swall,lwall);
+    }
     else
     {
         if (globalorientation&128)
@@ -5480,6 +5493,11 @@ static int n64_maskwallscan_rdp(int32_t x1, int32_t x2,
 #define N64_RDP_WALL_SPRITES 1
 #endif
 static volatile int n64_rdp_wall_sprites = N64_RDP_WALL_SPRITES;
+// The same for masked walls (n64_maskwall_rdp_ok): make RDP_MASK_WALLS=0.
+#ifndef N64_RDP_MASK_WALLS
+#define N64_RDP_MASK_WALLS 1
+#endif
+static volatile int n64_rdp_mask_walls = N64_RDP_MASK_WALLS;
 
 static int n64_wall_sprite_rdp_ok(spritetype *tspr)
 {
@@ -6422,6 +6440,185 @@ static void drawsprite (int32_t snum)
 }
 #endif
 
+#ifdef PLATFORM_N64
+// Can a masked wall go to the RDP (n64_maskwallscan_rdp)? Not translucent,
+// with a tile its loads can take (as n64_wall_sprite_rdp_ok).
+static int n64_maskwall_rdp_ok(int32_t z)
+{
+#if N64_RDP_COLUMNS
+    walltype *wal = &wall[pvWalls[z].worldWallId];
+    short tilenum = wal->overpicnum;
+    int logw;
+
+    if (!n64_rdp_mask_walls || (wal->cstat&128) || (uint32_t)tilenum >= (uint32_t)MAXTILES)
+        return 0;
+    if (tiles[tilenum].animFlags&192)
+        tilenum += animateoffs(tilenum);
+    logw = (picsiz[tilenum]>>4);
+    if (pow2long[logw] != tiles[tilenum].dim.height) logw++;
+    return logw >= 3 && logw <= 9 && tiles[tilenum].dim.width < 1024;
+#else
+    return 0;
+#endif
+}
+
+/*
+ * The rest of drawmasks() on the N64. The RDP draws its overlay over the
+ * whole frame once the CPU is done, in the order it was recorded, so a
+ * sprite or masked wall can go there only if nothing drawn on the CPU after
+ * it (nearer) shares screen columns with it. Build interleaves sprites and
+ * masked walls (a sprite behind a masked wall is drawn before it): the order
+ * is worked out first, exactly as the original loop below would draw, then
+ * walked from the nearest keeping the columns taken by the CPU, then drawn.
+ */
+typedef struct {
+    spritetype *tspr;       // a sprite, or NULL for a masked wall
+    int32_t sx, sy;         // the sprite's spritesx/spritesy, or the wall's maskwall index
+    uint8_t rdp;
+} n64_maskop_t;
+
+static n64_maskop_t n64_maskops[MAXSPRITESONSCREEN + MAXWALLSB];
+
+static void n64_drawmasks_ordered(void)
+{
+    static uint8_t cpu_cols[MAXXDIM];
+    static uint8_t drawn[MAXSPRITESONSCREEN];
+    n64_maskop_t *op;
+    int32_t i, j, k, gap, nops = 0, l, r, x;
+    int overlay = n64_world_overlay && frameplace == (uint8_t *)n64_screen_buffer();
+
+#define N64_OP_SPRITE(n) (op = &n64_maskops[nops++], op->tspr = tspriteptr[n], \
+                          op->sx = spritesx[n], op->sy = spritesy[n])
+#define N64_OP_WALL(n)   (op = &n64_maskops[nops++], op->tspr = NULL, op->sx = (n))
+
+    // The order (the original loop, recording instead of drawing).
+    while ((spritesortcnt > 0) && (maskwallcnt > 0))
+    {
+        j = maskwall[maskwallcnt-1];
+        if (spritewallfront(tspriteptr[spritesortcnt-1],pvWalls[j].worldWallId) == 0)
+        {
+            spritesortcnt--;
+            N64_OP_SPRITE(spritesortcnt);
+        }
+        else
+        {
+            k = -1;
+            gap = 0;
+            for(i=spritesortcnt-2; i>=0; i--)
+            {
+                drawn[i] = 0;
+                if ((pvWalls[j].screenSpaceCoo[0][VEC_COL] <= (spritesx[i]>>8)) && ((spritesx[i]>>8) <= pvWalls[j].screenSpaceCoo[1][VEC_COL]))
+                    if (spritewallfront(tspriteptr[i],pvWalls[j].worldWallId) == 0)
+                    {
+                        N64_OP_SPRITE(i);
+                        drawn[i] = 1;
+                        k = i;
+                        gap++;
+                    }
+            }
+            if (k >= 0)
+            {
+                // (drawn[] instead of the original's owner = -1: the sprites
+                // are only drawn later, and drawsprite reads their owner.)
+                int32_t n = k;
+                for(i=k; i<spritesortcnt; i++)
+                    if (i == spritesortcnt-1 || !drawn[i])
+                    {
+                        if (i > n)
+                        {
+                            tspriteptr[n] = tspriteptr[i];
+                            spritesx[n] = spritesx[i];
+                            spritesy[n] = spritesy[i];
+                        }
+                        n++;
+                    }
+                spritesortcnt -= gap;
+            }
+            maskwallcnt--;
+            N64_OP_WALL(maskwallcnt);
+        }
+    }
+    while (spritesortcnt > 0)
+    {
+        spritesortcnt--;
+        N64_OP_SPRITE(spritesortcnt);
+    }
+    while (maskwallcnt > 0)
+    {
+        maskwallcnt--;
+        N64_OP_WALL(maskwallcnt);
+    }
+#undef N64_OP_SPRITE
+#undef N64_OP_WALL
+
+    // Which ones the RDP may draw: from the nearest (drawn last).
+    if (overlay)
+        memset(cpu_cols, 0, xdimen);
+    for (i = nops-1; i >= 0; i--)
+    {
+        int ok;
+
+        op = &n64_maskops[i];
+        op->rdp = 0;
+        if (!overlay)
+            continue;
+        if (op->tspr)
+        {
+            if (!n64_sprite_columns(op->tspr, &l, &r))
+            {
+                l = 0;
+                r = xdimen-1;
+            }
+            // Face sprites, and opaque wall sprites the RDP can load.
+            ok = (op->tspr->cstat&48) == 0 || n64_wall_sprite_rdp_ok(op->tspr);
+        }
+        else
+        {
+            j = maskwall[op->sx];
+            l = max(pvWalls[j].screenSpaceCoo[0][VEC_COL], 0);
+            r = min(pvWalls[j].screenSpaceCoo[1][VEC_COL], xdimen-1);
+            ok = n64_maskwall_rdp_ok(j);
+        }
+        if (l > r)
+        {
+            op->rdp = 1;        // off screen: order does not matter
+            continue;
+        }
+        if (ok)
+        {
+            for (x = l; x <= r; x++)
+                if (cpu_cols[x])
+                    break;
+            if (x > r)
+            {
+                op->rdp = 1;
+                continue;
+            }
+        }
+        memset(&cpu_cols[l], 1, r-l+1);
+    }
+
+    // Drawn in order. (A sprite goes back to slot 0 of the sorted arrays,
+    // which drawsprite reads; they are no longer needed for anything else.)
+    for (i = 0; i < nops; i++)
+    {
+        op = &n64_maskops[i];
+        n64_sprite_rdp = op->rdp;
+        if (op->tspr)
+        {
+            tspriteptr[0] = op->tspr;
+            spritesx[0] = op->sx;
+            spritesy[0] = op->sy;
+            drawsprite(0);
+        }
+        else
+            drawmaskwall(op->sx);
+        n64_audio_poll_soon();
+    }
+    n64_sprite_rdp = 0;
+}
+#endif
+
 /*
      FCS: Draw every transparent sprites in Back To Front Order. Also draw decals on the walls...
  */
@@ -6526,6 +6723,9 @@ void drawmasks(void)
         i = j;
     }
 
+#ifdef PLATFORM_N64
+    n64_drawmasks_ordered();
+#else
     while ((spritesortcnt > 0) && (maskwallcnt > 0))  /* While BOTH > 0 */
     {
         j = maskwall[maskwallcnt-1];
@@ -6565,62 +6765,9 @@ void drawmasks(void)
             drawmaskwall(--maskwallcnt);
         }
     }
-#ifdef PLATFORM_N64
-    /*
-     * The sprites left are in front of every masked wall, and are drawn from
-     * the farthest (last) to the nearest. The RDP draws its sprites over the
-     * whole frame, so a face sprite can go there only if no nearer sprite
-     * drawn on the CPU (wall and floor sprites) shares screen columns with
-     * it. Walk from the nearest, keeping the columns taken by CPU sprites.
-     */
-    memset(n64_sprite_ok, 0, spritesortcnt);
-    if (n64_world_overlay && maskwallcnt == 0 && frameplace == (uint8_t *)n64_screen_buffer())
-    {
-        static uint8_t cpu_cols[MAXXDIM];
-        int32_t l, r, x;
-
-        memset(cpu_cols, 0, xdimen);
-        for (k = 0; k < spritesortcnt; k++)
-        {
-            if (!n64_sprite_columns(tspriteptr[k], &l, &r))
-            {
-                l = 0;
-                r = xdimen-1;
-            }
-
-            if (l > r)
-            {
-                n64_sprite_ok[k] = 1;       // off screen: order does not matter
-                continue;
-            }
-            // Face sprites, and opaque wall sprites the RDP can load (see
-            // n64_maskwallscan_rdp), go to the RDP if no nearer sprite drawn
-            // on the CPU shares their columns.
-            if ((tspriteptr[k]->cstat&48) == 0 || n64_wall_sprite_rdp_ok(tspriteptr[k]))
-            {
-                for (x = l; x <= r; x++)
-                    if (cpu_cols[x])
-                        break;
-                if (x > r)
-                {
-                    n64_sprite_ok[k] = 1;
-                    continue;
-                }
-            }
-            memset(&cpu_cols[l], 1, r-l+1);
-        }
-    }
-    while (spritesortcnt > 0)
-    {
-        spritesortcnt--;
-        n64_sprite_rdp = n64_sprite_ok[spritesortcnt];
-        drawsprite(spritesortcnt);
-        n64_audio_poll_soon();
-    }
-    n64_sprite_rdp = 0;
-#endif
     while (spritesortcnt > 0) drawsprite(--spritesortcnt);
     while (maskwallcnt > 0) drawmaskwall(--maskwallcnt);
+#endif
 }
 
 

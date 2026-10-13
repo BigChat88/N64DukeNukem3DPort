@@ -1599,6 +1599,7 @@ static int stick_center_x = 0, stick_center_y = 0;
 // map key, whether R is let go first or not (else it would open the menu).
 static int start_is_map = 0;
 static int start_was_down = 0;          // Start at the last poll
+static int c_up_aims = -1, c_down_aims = -1;   // C button pressed with R held (1) or not (0); -1: not held
 
 static void set_key(uint8_t *want, uint32_t scancode)
 {
@@ -1746,17 +1747,19 @@ void _handle_events(void)
         if (in.btn.l)       set_key(want, SC_ENTER);
         if (in.btn.c_left)  set_key(want, SC_COMMA);
         if (in.btn.c_right) set_key(want, SC_PERIOD);
-        if (in.btn.r)
-        {
-            // R held: C-up/C-down aim up/down.
-            if (in.btn.c_up)   set_key(want, SC_HOME);
-            if (in.btn.c_down) set_key(want, SC_END);
-        }
-        else
-        {
-            if (in.btn.c_up)   set_key(want, SC_KPAD5);
-            if (in.btn.c_down) set_key(want, SC_Z);
-        }
+        // C-up/C-down with R held: aim up/down; without: center the view /
+        // crouch. Which one is decided when the C button is pressed, and kept
+        // while it is held: crouched, R opens without looking down.
+        if (!in.btn.c_up)
+            c_up_aims = -1;
+        else if (c_up_aims < 0)
+            c_up_aims = in.btn.r;
+        if (!in.btn.c_down)
+            c_down_aims = -1;
+        else if (c_down_aims < 0)
+            c_down_aims = in.btn.r;
+        if (in.btn.c_up)   set_key(want, c_up_aims ? SC_HOME : SC_KPAD5);
+        if (in.btn.c_down) set_key(want, c_down_aims ? SC_END : SC_Z);
         if (in.btn.d_left)  set_key(want, SC_SEMICOLON);
         if (in.btn.d_right) set_key(want, SC_QUOTE);
         if (in.btn.d_up)    set_key(want, SC_LBRACKET);

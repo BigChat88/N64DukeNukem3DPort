@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#define MIXER_LOOP_OVERREAD 64
 #include <stdlib.h>
 #include <fcntl.h>
 
