@@ -95,16 +95,26 @@ const char *n64_addon_con(void)
     return addon_state > 0 && addon_con[0] ? addon_con : NULL;
 }
 
+// Measurements in the log, only in the builds made for them (PROFILE=1, and
+// LEVELSKIP for the memory line of each level: see the README).
 void n64_log_memory(const char *label)
 {
+#if defined(N64_PROFILE) || defined(N64_TEST_LEVELSKIP)
     heap_stats_t st;
     sys_get_heap_stats(&st);
     debugf("memory %s: heap used %d KB, free %d KB\n", label, st.used / 1024, st.free / 1024);
+#else
+    (void)label;
+#endif
 }
 
 void n64_boot_mark(const char *phase)
 {
+#ifdef N64_PROFILE
     debugf("boot: %6lu ms  %s\n", (unsigned long)get_ticks_ms(), phase);
+#else
+    (void)phase;
+#endif
 }
 
 void n64_early_init(void)

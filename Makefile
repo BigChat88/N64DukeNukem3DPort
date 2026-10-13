@@ -172,6 +172,11 @@ endif
 ifneq ($(RDP_WALL_SPRITES),)
 N64_CFLAGS += -DN64_RDP_WALL_SPRITES=$(RDP_WALL_SPRITES)
 endif
+# Game tics that may wait for a frame before the game slows down instead
+# (game.c, faketimerhandler): make MAX_TICS_BEHIND=1000 lets them pile up.
+ifneq ($(MAX_TICS_BEHIND),)
+N64_CFLAGS += -DN64_MAX_TICS_BEHIND=$(MAX_TICS_BEHIND)
+endif
 # Masked walls (fences, grates) the same way, on by default: RDP_MASK_WALLS=0.
 ifneq ($(RDP_MASK_WALLS),)
 N64_CFLAGS += -DN64_RDP_MASK_WALLS=$(RDP_MASK_WALLS)
@@ -197,6 +202,11 @@ endif
 ifneq ($(LEVELCYCLE),)
 N64_CFLAGS += -DN64_TEST_LEVELCYCLE=$(LEVELCYCLE)
 endif
+# Screenshots in the log (n64_screenshot, tools/shots.py): with BENCH, one per
+# level 6 s in: make BENCH=20 SHOTS=1
+ifneq ($(SHOTS),)
+N64_CFLAGS += -DN64_SHOTS
+endif
 # Benchmark (see "Measuring performance" in the README): make BENCH=20
 # Every level in turn for that many seconds, the player (who never dies)
 # turning in place where the level starts: the same views on every run, and
@@ -204,16 +214,13 @@ endif
 # otherwise (an expansion's ROM: ARGS="/v2 /l1" for Nuclear Winter, /v3 the others).
 ifneq ($(BENCH),)
 N64_CFLAGS += -DN64_TEST_BENCH -DN64_TEST_GOD
-ifneq ($(SHOTS),)
-N64_CFLAGS += -DN64_SHOTS
-endif
 ifeq ($(LEVELSKIP),)
 N64_CFLAGS += -DN64_TEST_LEVELSKIP=$(BENCH)
 endif
 ARGS ?= /v1 /l1
 endif
 
-BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE) bench=$(BENCH) shots=$(SHOTS) rdp_wall_sprites=$(RDP_WALL_SPRITES) rdp_mask_walls=$(RDP_MASK_WALLS)
+BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE) bench=$(BENCH) shots=$(SHOTS) rdp_wall_sprites=$(RDP_WALL_SPRITES) rdp_mask_walls=$(RDP_MASK_WALLS) max_tics_behind=$(MAX_TICS_BEHIND)
 $(shell mkdir -p $(BUILD_DIR); echo '$(BUILD_OPTIONS)' | cmp -s - $(BUILD_DIR)/options.txt || echo '$(BUILD_OPTIONS)' > $(BUILD_DIR)/options.txt)
 $(OBJS): $(BUILD_DIR)/options.txt
 

@@ -99,7 +99,7 @@ Working on the code needs the N64 toolchain, which runs in Docker through the
 ```sh
 git clone --recurse-submodules <repository-url>
 cd N64DukeNukem3DPort
-git -C libdragon apply ../patches/libdragon-mixer-clamp-frequency.patch   # see patches/
+for p in patches/libdragon-*.patch; do git -C libdragon apply ../$p; done   # see patches/
 libdragon install        # the first time: builds the pinned libdragon in the container
 ```
 
@@ -158,6 +158,10 @@ tag, the code and the binaries always match. Pull requests only build and test.
   again (by default the RDP draws them when nothing nearer drawn on the CPU covers them).
 - `libdragon make RDP_MASK_WALLS=0`: the same for masked walls (bars, grates), which by
   default the RDP draws on the same terms.
+- `libdragon make MAX_TICS_BEHIND=1000`: a slow frame is followed by as many game tics as
+  it took, as on DOS (by default at most 2 wait for a frame, and below ~15 fps the game
+  slows down instead). Benchmarks comparing a change that is not about this should use it:
+  the limit changes how far the player turns, and so what is measured.
 - `libdragon make RDP_COLUMNS=0`: walls and sky are drawn on the CPU again (by default the
   RDP draws them, see `src/n64/n64_columns.h`), for comparison.
 - `libdragon make GOD=1`: the player does not die (for measuring: the dead player's view is

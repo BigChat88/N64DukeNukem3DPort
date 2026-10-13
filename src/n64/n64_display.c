@@ -470,6 +470,13 @@ int n64_overlay_capturing(void)
     return ovl_capture > 0 && video_ready;
 }
 
+static int skip_frame = 0;              // n64_skip_next_frame
+
+void n64_skip_next_frame(void)
+{
+    skip_frame = 1;
+}
+
 // Forgets the recorded sprites and unlocks their tiles. The RDP must be done
 // with them (callers run after n64_wait_rdp).
 static void ovl_clear(void)
@@ -1212,7 +1219,7 @@ int VBE_setPalette(uint8_t  *palettebuffer)
     // palette changes a second time without a new frame, show the current
     // frame again. A single change per frame (damage/pickup flashes) waits
     // for the next _nextpage() as usual and costs nothing.
-    if (++palette_changes_since_frame >= 2)
+    if (++palette_changes_since_frame >= 2 && !skip_frame)
     {
         n64_audio_poll();
         present_frame();
@@ -1238,7 +1245,8 @@ void _uninitengine(void)
 
 void _updateScreenRect(int32_t x, int32_t y, int32_t w, int32_t h)
 {
-    present_frame();
+    if (!skip_frame)
+        present_frame();
 }
 
 void _nextpage(void)
@@ -1247,9 +1255,21 @@ void _nextpage(void)
 
     _handle_events();
     n64_wait_rdp();
-    if (ovl_new_frame)
-        ovl_clear();        // no 2D sprites were recorded for this frame
-    present_frame();
+    if (skip_frame)
+    {
+        // Not shown (n64_skip_next_frame), nor the sprites recorded for it;
+        // the list of the frame on screen, if none were, is kept for a
+        // palette fade to show it again.
+        skip_frame = 0;
+        if (!ovl_new_frame)
+            ovl_clear();
+    }
+    else
+    {
+        if (ovl_new_frame)
+            ovl_clear();    // no 2D sprites were recorded for this frame
+        present_frame();
+    }
     ovl_new_frame = 1;      // the next sprite recorded starts a new list
     tilt_ang = 0;           // set again by each frame that tilts
     palette_changes_since_frame = 0;
@@ -1261,8 +1281,8 @@ void _nextpage(void)
     ticks = getticks();
     total_render_time = (ticks - last_render_ticks);
     if (total_render_time > 1000){
-        debugf("fps: %ld\n", (long)total_rendered_frames);
 #ifdef N64_PROFILE
+        debugf("fps: %ld\n", (long)total_rendered_frames);
         prof_report(total_rendered_frames);
         n64_audio_stats();
 

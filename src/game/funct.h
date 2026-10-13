@@ -413,6 +413,10 @@ extern void Logo(void );
 extern void loadtmb(void );
 //#line "game.c" 6210
 extern void compilecons(void );
+#if PLATFORM_N64
+int32_t CON_N64LabelValue(const char *name, int32_t def);
+extern int32_t n64_snowflake_pic;
+#endif
 //#line "game.c" 6230
 extern void Startup(void );
 //#line "game.c" 6284

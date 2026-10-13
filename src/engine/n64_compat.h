@@ -80,6 +80,10 @@ int n64_in_menu(void);
 void n64_boot_mark(const char *phase);
 // Logs the heap in use and free (label: where), see n64_system.c.
 void n64_log_memory(const char *label);
+// The next frame (_nextpage) is not shown, nor the sprites recorded for it,
+// and a palette change does not show it either: the screen keeps the last
+// frame shown (see enterlevel).
+void n64_skip_next_frame(void);
 // Shows a fatal error on screen and halts.
 void n64_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 

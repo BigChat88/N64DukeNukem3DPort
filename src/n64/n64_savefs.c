@@ -895,25 +895,14 @@ static int savefs_close(void *file)
         flush_chunk(f);
         last_write_error = f->nomem ? ENOMEM : f->overflow ? ENOSPC :
                            store_file(f->name, f->out, f->out_len, f->total);
-#ifdef N64
-        if (last_write_error == ENOMEM)
-        {
-            heap_stats_t st;
-            sys_get_heap_stats(&st);
-            debugf("savefs: heap: %d KB used, %d KB free\n", st.used / 1024, st.free / 1024);
-        }
-#endif
         if (last_write_error)
         {
-            debugf("savefs: %s could not be saved (%lu bytes compressed): %s\n", f->name,
-                   (unsigned long)f->out_len, last_write_error == ENOSPC ? "no space" :
+            debugf("savefs: %s could not be saved: %s\n", f->name,
+                   last_write_error == ENOSPC ? "no space" :
                    last_write_error == ENOMEM ? "out of memory" : "FlashRAM error");
             errno = last_write_error;
             result = -1;
         }
-        else
-            debugf("savefs: %s saved, %lu -> %lu bytes\n", f->name,
-                   (unsigned long)f->total, (unsigned long)f->out_len);
         free(f->out);
     }
     else

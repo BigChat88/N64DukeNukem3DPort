@@ -163,6 +163,7 @@ static int ensure_synth(void)
         return 0;
     }
 
+#ifdef N64_PROFILE
     {
         heap_stats_t before, after;
         sys_get_heap_stats(&before);
@@ -171,6 +172,9 @@ static int ensure_synth(void)
         debugf("music: soundfont uses %d KB of RAM (%d KB left)\n",
                (after.used - before.used) / 1024, after.free / 1024);
     }
+#else
+    bank = sf64_load(SOUNDFONT_PATH);
+#endif
     synth = sf64_synth_create(bank);
     sf64_synth_set_mode(synth, SF64_MODE_GM1);
     sf64_synth_set_channels(synth, first, N64_MUSIC_CHANNELS, MIXER_PRIORITY_MUSIC);

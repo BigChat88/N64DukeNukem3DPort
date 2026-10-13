@@ -1689,6 +1689,14 @@ if (!VOLUMEONE)
 
 	 ud.mapCRC[myconnectindex] = mapCRC;
 
+#if PLATFORM_N64
+     // The menus start a game from inside menus() (the skill menu, a saved
+     // game...), and go on drawing themselves when enterlevel() returns: that
+     // frame showed the skill menu for about a second, after the "ENTERING"
+     // screen and before the level's first frame. The next frame is not
+     // shown, so the "ENTERING" screen stays until the level is drawn.
+     n64_skip_next_frame();
+#endif
 }
 
 /*

@@ -253,6 +253,17 @@ static int32_t con_label_first(const char *s)
     return labelcnt;
 }
 
+#if PLATFORM_N64
+// The value of a CON label (a define, an actor's tile...) right after
+// compilecons(), or def if there is none. (The labels live in memory the game
+// reuses afterwards, see labelcode.)
+int32_t CON_N64LabelValue(const char *name, int32_t def)
+{
+    int32_t i = con_label_first(name);
+    return i < labelcnt ? labelcode[i] : def;
+}
+#endif
+
 
 short getincangle(short a,short na)
 {

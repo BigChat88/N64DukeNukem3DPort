@@ -789,6 +789,9 @@ void getpackets(void)
 
 //From player.c
 void computergetinput(int32_t snum, input *syn);
+#if PLATFORM_N64 && !defined(N64_MAX_TICS_BEHIND)
+#define N64_MAX_TICS_BEHIND 2      // (30 tics a second: full speed down to 15 fps)
+#endif
 void faketimerhandler()
 {
     int32_t i, j, k;
@@ -803,8 +806,20 @@ void faketimerhandler()
     }
 
     //Has it been 120ticks ?
-    if ((totalclock < ototalclock+TICSPERFRAME) || (ready2send == 0)) 
+    if ((totalclock < ototalclock+TICSPERFRAME) || (ready2send == 0))
 		return; // Returns here when playing a demo.
+#if PLATFORM_N64
+    // At most N64_MAX_TICS_BEHIND game tics waiting for moveloop(). Every tic
+    // of a slow frame queued another one for the next frame, which then took
+    // longer still: in the heaviest scenes (Nuclear Winter's snow) the frame
+    // rate sank. Past this the game slows down instead (below ~15 fps);
+    // the time is dropped, not the input already queued.
+    if (numplayers < 2 && movefifoend[myconnectindex] - movefifoplc >= N64_MAX_TICS_BEHIND)
+    {
+        ototalclock = totalclock;
+        return;
+    }
+#endif
     
     //YES : Add 120tick
     ototalclock += TICSPERFRAME;
@@ -7923,6 +7938,8 @@ void Startup(void)
    compilecons();
 #if PLATFORM_N64
    n64_boot_mark("compilecons");
+   // Nuclear Winter's falling snow (NWSNOW.CON), or a map's: see movesprite.
+   n64_snowflake_pic = CON_N64LabelValue("SNOWFLAKE", -1);
    {
        // The controller has no space bar: a dead player restarts with the
        // fire button too (ifhitspace in gamedef.c). USER.CON's quote 13,

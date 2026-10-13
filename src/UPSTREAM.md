@@ -65,6 +65,27 @@ marked with `PLATFORM_N64` / `N64`.
   copied the next point instead of the current one (a Chocolate Duke3D slip; BUILD and the
   other three passes take the current one): every sector cut by the left edge of the screen
   was drawn as wrong triangles, leaving black gaps and painting over its neighbours.
+- `game/actors.c` (`movesprite`): the snowflakes of Nuclear Winter's falling snow
+  (`NWSNOW.CON`, the CON label `SNOWFLAKE`, read in `game/gamedef.c` after compiling) move
+  straight, through openings into the next sector but never through walls, instead of with
+  `clipmove`: as actors moved like monsters, the snow alone took up to ~60 ms per frame.
+- `game/actors.c` (`movefta`): a sleeping enemy looks for the point near the player it
+  checks starting from the player's sector, not its own, and the second, identical search
+  is gone: each one went through every sector of the map (up to ~20 ms per frame in Life's
+  A Beach). The random numbers drawn are the same.
+- `game/sounds.c` (`loadsound`): only sounds over 160 KB play straight from ROM (64 KB
+  before): streamed 8-bit sounds make the mixer split its work into rounds of ~60 samples
+  for every channel, and Life's A Beach's ambient loops doubled its CPU time.
+- `game/actors.c` (`moveeffectors`, SE 24 conveyors and SE 14 trains): what they carry is
+  looked for in its sector and the ones around it (`n64_updatesector_near`), not through the
+  whole map: objects pushed into a wall, and the trains' own pivot sprite in Duke It Out In
+  D.C., are outside every sector, and `updatesector` searched every sector for them every
+  tick (13 ms per frame on D.C.'s E3L4).
+- `game/premap.c` (`enterlevel`): the frame after a level is entered is not shown. The menus
+  start a game from inside `menus()` and go on drawing themselves: the skill menu came back
+  for about a second between the "ENTERING" screen and the level.
+- `game/game.c` (`faketimerhandler`): at most two game tics wait for the next frame; past
+  that the game slows down (below ~15 fps) instead of running more tics in each slow frame.
 - `game/premap.c`: the map shows what the player has seen (Build's `automapping`), not only
   the sectors walked through and next to them, as Duke did.
 - `game/gamedef.c` (`ifhitspace`), `game/game.c`: a dead player restarts with the fire button

@@ -623,6 +623,58 @@ void hitradius( short i, int32_t  r, int32_t  hp1, int32_t  hp2, int32_t  hp3, i
 }
 
 
+#if PLATFORM_N64
+/*
+ * Nuclear Winter's snow (NWSNOW.CON) is made of actors: up to a hundred or so
+ * flakes at once, each moved by clipmove() every tick like a monster. With
+ * CLIPMASK0, clipmove also goes through every sprite of the sectors around,
+ * the other flakes included, so the cost grows with the square of their
+ * number: in E2L5 the snow alone took ~60 ms per frame (12 fps).
+ *
+ * A flake blocks nothing and nothing blocks it but walls, so here it moves
+ * straight: it can go into a sector next to its own through an opening (a
+ * red wall), never through a solid wall, and it stays where it was if the
+ * step would take it anywhere else. The z rules are movesprite's.
+ */
+int32_t n64_snowflake_pic = -1;
+
+static int n64_move_snowflake(short spritenum, int32_t xchange, int32_t ychange, int32_t zchange)
+{
+    spritetype *s = &sprite[spritenum];
+    int32_t x = s->x + ((xchange*TICSPERFRAME)>>2);
+    int32_t y = s->y + ((ychange*TICSPERFRAME)>>2);
+    int32_t daz;
+    short sect = s->sectnum;
+
+    if (!inside(x, y, sect))
+    {
+        walltype *wal = &wall[sector[sect].wallptr];
+        int i;
+
+        sect = -1;
+        for (i = sector[s->sectnum].wallnum; i > 0; i--, wal++)
+            if (wal->nextsector >= 0 && !(wal->cstat&1) && inside(x, y, wal->nextsector))
+            {
+                sect = wal->nextsector;
+                break;
+            }
+        if (sect < 0)
+            return 32768;           // (a wall: as clipmove would say)
+    }
+    s->x = x;
+    s->y = y;
+    if (sect != s->sectnum)
+        changespritesect(spritenum, sect);
+
+    daz = s->z + ((zchange*TICSPERFRAME)>>3);
+    if ((daz > hittype[spritenum].ceilingz) && (daz <= hittype[spritenum].floorz))
+        s->z = daz;
+    else
+        return 16384+sect;
+    return 0;
+}
+#endif
+
 int movesprite(short spritenum, int32_t xchange, int32_t ychange, int32_t zchange, uint32_t cliptype)
 {
     int32_t daz,h, oldx, oldy;
@@ -640,6 +692,11 @@ int movesprite(short spritenum, int32_t xchange, int32_t ychange, int32_t zchang
             setsprite(spritenum,sprite[spritenum].x,sprite[spritenum].y,sprite[spritenum].z);
         return 0;
     }
+
+#if PLATFORM_N64
+    if (sprite[spritenum].picnum == n64_snowflake_pic && !bg && !(sprite[spritenum].cstat&257))
+        return n64_move_snowflake(spritenum, xchange, ychange, zchange);
+#endif
 
     dasectnum = sprite[spritenum].sectnum;
 
@@ -874,6 +931,75 @@ void clearsectinterpolate(short i)
     }
 }
 
+#if PLATFORM_N64
+/*
+ * updatesector() for an object that has just moved a little (carried by a
+ * conveyor or a train): it is looked for in its sector and the ones next to
+ * it, two openings away at most. updatesector() goes on through every
+ * sector of the map, which takes ~6 ms in Duke It Out In D.C.'s big maps,
+ * and carried objects that end up inside a wall (outside every sector) made
+ * it do that every tick: up to 13 ms per frame on E3L4's conveyors. Not
+ * found nearby: -1, as when updatesector() finds nothing (an object does not
+ * get through a wall into a room further away either). depth 1: only the
+ * sectors next to it; 2: theirs too.
+ */
+static void n64_updatesector_near(int32_t x, int32_t y, short *sectnum, int depth)
+{
+    short s = *sectnum, i, j;
+    walltype *w, *w2;
+
+    if (s < 0 || s >= numsectors)
+    {
+        updatesector(x, y, sectnum);
+        return;
+    }
+    if (inside(x, y, s) == 1)
+        return;
+    w = &wall[sector[s].wallptr];
+    for (i = sector[s].wallnum; i > 0; i--, w++)
+        if (w->nextsector >= 0 && inside(x, y, w->nextsector) == 1)
+        {
+            *sectnum = w->nextsector;
+            return;
+        }
+    if (depth < 2)
+    {
+        *sectnum = -1;
+        return;
+    }
+    w = &wall[sector[s].wallptr];
+    for (i = sector[s].wallnum; i > 0; i--, w++)
+    {
+        if (w->nextsector < 0)
+            continue;
+        w2 = &wall[sector[w->nextsector].wallptr];
+        for (j = sector[w->nextsector].wallnum; j > 0; j--, w2++)
+            if (w2->nextsector >= 0 && w2->nextsector != s && inside(x, y, w2->nextsector) == 1)
+            {
+                *sectnum = w2->nextsector;
+                return;
+            }
+    }
+    *sectnum = -1;
+}
+
+// setsprite() with n64_updatesector_near().
+static int n64_setsprite_near(short spritenum, int32_t x, int32_t y, int32_t z, int depth)
+{
+    short sect = sprite[spritenum].sectnum;
+
+    sprite[spritenum].x = x;
+    sprite[spritenum].y = y;
+    sprite[spritenum].z = z;
+    n64_updatesector_near(x, y, &sect, depth);
+    if (sect < 0)
+        return -1;
+    if (sect != sprite[spritenum].sectnum)
+        changespritesect(spritenum, sect);
+    return 0;
+}
+#endif
+
 void ms(short i)
 {
     //T1,T2 and T3 are used for all the sector moving stuff!!!
@@ -932,6 +1058,16 @@ void movefta(void)
                     {
                         px = ps[p].oposx+64-(TRAND&127);
                         py = ps[p].oposy+64-(TRAND&127);
+#if PLATFORM_N64
+                        // The search for (px,py) starts from the player's
+                        // sector, not the enemy's: from there updatesector()
+                        // almost never found it in the sector or its
+                        // neighbours, and went through every sector of the
+                        // map, for each sleeping enemy (up to ~20 ms per
+                        // frame in Life's A Beach). Only "is it in the map"
+                        // is used, which does not depend on where it starts.
+                        psect = ps[p].cursectnum;
+#endif
                         updatesector(px,py,&psect);
                         if(psect == -1)
                         {
@@ -940,12 +1076,16 @@ void movefta(void)
                         }
                         sx = s->x+64-(TRAND&127);
                         sy = s->y+64-(TRAND&127);
+#if !PLATFORM_N64
+                        // (The original looks for (px,py) again, the point
+                        // just found: same answer, another full search.)
                         updatesector(px,py,&ssect);
                         if(ssect == -1)
                         {
                             i = nexti;
                             continue;
                         }
+#endif
                         j = cansee(sx,sy,s->z-(TRAND%(52<<8)),s->sectnum,px,py,ps[p].oposz-(TRAND%(32<<8)),ps[p].cursectnum);
                     }
                     else
@@ -5309,7 +5449,11 @@ void moveeffectors(void)   //STATNUM 3
                     }
 
                     ms(i);
+#if PLATFORM_N64
+                    n64_setsprite_near(i,s->x,s->y,s->z,1);
+#else
                     setsprite(i,s->x,s->y,s->z);
+#endif
 
                     if( (sc->floorz-sc->ceilingz) < (108<<8) )
                     {
@@ -5337,7 +5481,11 @@ void moveeffectors(void)   //STATNUM 3
                             if (sprite[j].statnum == 1 && badguy(&sprite[j]) && sprite[j].picnum != SECTOREFFECTOR && sprite[j].picnum != LOCATORS )
                             {
                                 k = sprite[j].sectnum;
+#if PLATFORM_N64
+                                n64_updatesector_near(sprite[j].x,sprite[j].y,&k,2);
+#else
                                 updatesector(sprite[j].x,sprite[j].y,&k);
+#endif
                                 if( sprite[j].extra >= 0 && k == s->sectnum )
                                 {
                                     gutsdir(&sprite[j],JIBS6,72,myconnectindex);
@@ -6591,7 +6739,11 @@ void moveeffectors(void)   //STATNUM 3
                                     sprite[j].x += x>>2;
                                     sprite[j].y += l>>2;
 
+#if PLATFORM_N64
+                                    n64_setsprite_near(j,sprite[j].x,sprite[j].y,sprite[j].z,2);
+#else
                                     setsprite(j,sprite[j].x,sprite[j].y,sprite[j].z);
+#endif
 
                                     if( sector[sprite[j].sectnum].floorstat&2 )
                                         if(sprite[j].statnum == 2)
