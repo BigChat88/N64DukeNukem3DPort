@@ -67,6 +67,8 @@ marked with `PLATFORM_N64` / `N64`.
   was drawn as wrong triangles, leaving black gaps and painting over its neighbours.
 - `game/premap.c`: the map shows what the player has seen (Build's `automapping`), not only
   the sectors walked through and next to them, as Duke did.
+- `game/gamedef.c` (`ifhitspace`), `game/game.c`: a dead player restarts with the fire button
+  too (a new press after the death), and quote 13 reads "PRESS FIRE TO RESTART LEVEL".
 - `game/types.h`: `true`/`false` defined as in `<stdbool.h>` (same values), which some
   files include as well.
 - `engine/fixedPoint_math.c`: `clearbufbyte` repeats the pattern in the machine's byte
@@ -102,7 +104,12 @@ marked with `PLATFORM_N64` / `N64`.
   columns with, clipped per column (`n64/n64_overlay.h`). Also the ANM animations
   (`game/menues.c`, `playanm`) and the screen tilt (`displayrooms`, `n64_view_tilt`), which
   the original did by rendering to a tile and rotating it on the CPU.
-- `engine/tiles.c`: on the N64, textures are written back from the CPU cache when loaded.
+- `engine/engine.c` (`drawsprite`, `drawmasks`): opaque wall sprites (fences, signs) that no
+  nearer sprite drawn on the CPU overlaps are drawn by the RDP over the frame, as masked
+  columns (`n64_maskwallscan_rdp`, `n64_overlay_columns_begin`) instead of `maskwallscan`.
+- `engine/tiles.c`: on the N64, textures are written back from the CPU cache when loaded,
+  and the cache starts on a 16 byte boundary (the RSP mixer plays the sounds in it from
+  there, and 8-bit samples not aligned to 16 crackle).
 - `game/game.c`: demos disabled on the N64 (their reader puts bytes and `short`s into
   `int32` fields, and the recorded input is little-endian).
 - `game/premap.c`: the wait for the skill voice to end keeps the audio running

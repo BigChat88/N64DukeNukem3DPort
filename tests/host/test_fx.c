@@ -8,6 +8,7 @@
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 
 // pitch.h pulls in the whole game (duke3d.h): only PITCH_GetScale is used.
@@ -55,6 +56,7 @@ void dma_read(void *ram, pi_addr_t pi, unsigned long len)
 }
 
 void *malloc_uncached(size_t size) { return calloc(1, size); }
+void data_cache_hit_writeback(const void *addr, unsigned long length) {}
 void audio_init(const int frequency, int numbuffers) {}
 void audio_close(void) {}
 void mixer_init(int num_channels) {}
@@ -161,8 +163,11 @@ static void check_8bit(fx_voice_t *v, const uint8_t *pcm, int bytes)
         fail("8-bit sound of %d samples parsed as %d bits, %d samples", bytes, v->bits, total_length(v));
     decode(v, 1);
     for (i = 0; i < bytes; i++)
-        if (sbuf.data[i] != (uint8_t)(pcm[i] ^ 0x80))
-            fail("sample %d: %02X, expected %02X", i, sbuf.data[i], pcm[i] ^ 0x80);
+    {
+        uint8_t want = (uint8_t)((int8_t)(pcm[i] ^ 0x80) * FX_PEAK >> 7);    // (scaled, see FX_PEAK)
+        if (sbuf.data[i] != want)
+            fail("sample %d: %02X, expected %02X", i, sbuf.data[i], want);
+    }
 }
 
 static void check_16bit(fx_voice_t *v, const uint8_t *pcm, int bytes)
@@ -174,7 +179,7 @@ static void check_16bit(fx_voice_t *v, const uint8_t *pcm, int bytes)
     decode(v, 2);
     for (i = 0; i < bytes / 2; i++)
     {
-        int16_t got, want = (int16_t)(pcm[i*2] | (pcm[i*2+1] << 8));
+        int16_t got, want = (int16_t)((int16_t)(pcm[i*2] | (pcm[i*2+1] << 8)) * FX_PEAK >> 7);
         memcpy(&got, sbuf.data + i * 2, 2);
         if (got != want)
             fail("sample %d: %d, expected %d", i, got, want);
@@ -277,6 +282,96 @@ static void test_voc_truncated(void)
     check_8bit(&v, pcm, 4500);
 }
 
+/*
+ * Sounds in memory are converted once, in place, to the mixer's format
+ * (signed 8-bit, big endian 16-bit) at a 16 byte aligned offset, scaled
+ * under the resampler's limit with the channel volume making up for it, the
+ * end of one that does not loop faded and kept off the last cache line:
+ * played again, they are found converted.
+ */
+static void test_resident(void)
+{
+    // The file 8 bytes past a 16 byte boundary, as the game's cache leaves it:
+    // the samples must be aligned in memory, not just within the file.
+    static uint8_t pcm[3001], store[8192 + 16] __attribute__((aligned(16))), copy[8192];
+    uint8_t *file = store + 8;
+    fx_voice_t v;
+    int i, k;
+
+    // 8-bit VOC (samples at offset 32), 8-bit WAV (44), 16-bit WAV (44); the
+    // last case plays looped.
+    for (k = 0; k < 4; k++)
+    {
+        int bits = k == 2 ? 16 : 8, bytes = k == 2 ? 3000 : 3001, looped = k == 3;
+        int len = bytes / (bits / 8), peak = 0, limit = bits == 8 ? FX_PEAK : FX_PEAK << 8;
+        int32_t from;
+
+        make_pcm(pcm, sizeof(pcm), 10 + k);
+        if (k == 0)
+        {
+            // A VOC with one sound data block (make_voc splits it in two).
+            memset(file, 0, 8192);
+            memcpy(file, "Creative Voice File", 20);
+            le16(file + 0x14, 26);
+            file[26] = 1; le24(file + 27, bytes + 2);
+            file[30] = 256 - 1000000 / 11025; file[31] = 0;
+            memcpy(file + 32, pcm, bytes);
+            from = 32;
+        }
+        else
+        {
+            make_wav(file, bits, 11025, pcm, bytes, 0, 0);
+            from = 44;
+        }
+        for (i = 0; i < len; i++)
+        {
+            int s = bits == 8 ? (int8_t)(pcm[i] ^ 0x80) : (int16_t)(pcm[i*2] | (pcm[i*2+1] << 8));
+            if (abs(s) > peak) peak = abs(s);
+        }
+
+        if (!parse_sound(&v, file, k == 0, looped) || !v.resident)
+            fail("case %d: not made resident", k);
+        if ((uintptr_t)v.seg[0].data & 15)
+            fail("case %d: samples not 16 byte aligned in memory", k);
+        if (v.bits != bits)
+            fail("case %d: %d bits", k, v.bits);
+        if (looped ? total_length(&v) != len
+                   : (((uintptr_t)file + from + len * (bits / 8)) & ~(uintptr_t)15) - 16 < (uintptr_t)v.seg[0].data + total_length(&v) * (bits / 8))
+            fail("case %d: %d samples of %d kept (loops: %d)", k, total_length(&v), len, looped);
+        if (peak > limit ? fabsf(v.gain - (float)peak / limit) > 0.01f : v.gain != 1.0f)
+            fail("case %d: gain %f for a peak of %d", k, v.gain, peak);
+        for (i = 0; i < total_length(&v) - (looped ? 0 : FX_TAIL_FADE); i++)
+        {
+            int s = bits == 8 ? (int8_t)(pcm[i] ^ 0x80) : (int16_t)(pcm[i*2] | (pcm[i*2+1] << 8));
+            int want = peak > limit ? s * limit / peak : s;
+            int got = bits == 8 ? (int8_t)v.seg[0].data[i] : (int16_t)((v.seg[0].data[i*2] << 8) | v.seg[0].data[i*2+1]);
+            if (got != want)
+                fail("case %d: sample %d is %d, expected %d", k, i, got, want);
+        }
+        if (!looped && v.seg[0].data[(total_length(&v) - 1) * (bits / 8)] != 0)
+            fail("case %d: the end is not faded out", k);
+        // Played again: the descriptor is found, nothing converted twice.
+        memcpy(copy, file, sizeof(copy));
+        if (!parse_sound(&v, file, k != 0, looped) || !v.resident || memcmp(copy, file, sizeof(copy)) != 0)
+            fail("case %d: second play changed the file", k);
+    }
+}
+
+// A VOC whose samples are in several blocks stays on the fx_read path.
+static void test_not_resident(void)
+{
+    static uint8_t pcm[5000], file[8192];
+    fx_voice_t v;
+
+    make_pcm(pcm, sizeof(pcm), 20);
+    make_voc(file, pcm, 5000, 1777);
+    if (!parse_sound(&v, file, 1, 0) || v.resident)
+        fail("a two-block VOC was made resident");
+    check_8bit(&v, pcm, 5000);
+    if (!parse_sound(&v, (uint8_t *)on_rom(file, 6000), 1, 0) || v.resident)
+        fail("a sound streamed from ROM was made resident");
+}
+
 static void run(const char *name, void (*test)(void))
 {
     int before = failures;
@@ -296,6 +391,8 @@ int main(void)
     run("wav_bad_data_size", test_wav_bad_data_size);
     run("voc", test_voc);
     run("voc_truncated", test_voc_truncated);
+    run("resident", test_resident);
+    run("not_resident", test_not_resident);
 
     printf("%s: %d failed\n", failures ? "FAILED" : "PASSED", failures);
     return failures ? 1 : 0;

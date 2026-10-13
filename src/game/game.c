@@ -7923,6 +7923,17 @@ void Startup(void)
    compilecons();
 #if PLATFORM_N64
    n64_boot_mark("compilecons");
+   {
+       // The controller has no space bar: a dead player restarts with the
+       // fire button too (ifhitspace in gamedef.c). USER.CON's quote 13,
+       // "PRESS SPACE TO RESTART LEVEL", says so.
+       char *w = strstr(fta_quotes[13], "SPACE");
+       if (w)
+       {
+           memmove(w + 4, w + 5, strlen(w + 5) + 1);
+           memcpy(w, "FIRE", 4);
+       }
+   }
 #endif
 
 #ifdef AUSTRALIA
@@ -8832,6 +8843,63 @@ int main(int argc,char  **argv)
                     det_done = 1;
                 }
             }
+        }
+#endif
+#ifdef N64_TEST_BENCH
+        {
+            // Benchmark builds (make BENCH=seconds, see the README): the time
+            // of every frame of a level, from 3 s after it starts (fade in,
+            // first loads) until the next one starts, summed up in one
+            // "bench:" line of the log (read by tools/perf_report.py).
+            extern void TIMER_GetPlatformTicks(int64_t *t);
+            static int bench_level = -1;            // volume*11+level measured
+            static int32_t bench_clock = 0;         // totalclock at the last frame
+            static int64_t bench_last = 0;          // time of the last frame, us
+            static uint32_t frames, worst, bins[4]; // <=33.4 ms (30 fps), <=50, <=66.7, more
+            static uint64_t total;
+            int key = ud.volume_number*11 + ud.level_number;
+            int playing = (ps[myconnectindex].gm&MODE_GAME) && !(ps[myconnectindex].gm&MODE_MENU);
+            int64_t now;
+
+            TIMER_GetPlatformTicks(&now);
+            if (playing && (key != bench_level || totalclock < bench_clock))
+            {
+                // A level starts (or starts again): report the one before.
+                if (bench_level >= 0 && frames > 0)
+                    debugf("bench: E%dL%d frames=%lu avg=%.2fms fps=%.1f worst=%.1fms "
+                           "fps30=%lu fps20=%lu fps15=%lu slower=%lu\n",
+                           bench_level/11+1, bench_level%11+1, (unsigned long)frames,
+                           total / 1000.0f / frames, frames * 1000000.0f / total, worst / 1000.0f,
+                           (unsigned long)bins[0], (unsigned long)bins[1],
+                           (unsigned long)bins[2], (unsigned long)bins[3]);
+                bench_level = key;
+                frames = worst = total = 0;
+                memset(bins, 0, sizeof(bins));
+            }
+            if (playing && totalclock >= 3*120 && bench_last != 0)
+            {
+                uint32_t dt = (uint32_t)(now - bench_last);
+                frames++;
+                total += dt;
+                if (dt > worst) worst = dt;
+                bins[dt <= 33400 ? 0 : dt <= 50000 ? 1 : dt <= 66700 ? 2 : 3]++;
+            }
+            if (playing)
+                bench_clock = totalclock;
+            bench_last = now;
+#ifdef N64_SHOTS
+            {
+                // (make SHOTS=1) One screenshot per level, 6 s in.
+                static int shot_level = -1;
+                if (playing && totalclock >= 6*120 && shot_level != key)
+                {
+                    char label[16];
+                    sprintf(label, "E%dL%d", key/11+1, key%11+1);
+                    n64_screenshot(label);
+                    shot_level = key;
+                }
+            }
+#endif
         }
 #endif
 #ifdef N64_TEST_LEVELSKIP
@@ -10099,27 +10167,33 @@ uint8_t  domovethings(void)
 
         if( ud.pause_on == 0 )
         {
+            PROF_BEGIN(PROF_LPLAYER);
             processinput(i);
             checksectors(i);
+            PROF_END(PROF_LPLAYER);
         }
     }
 
     if( ud.pause_on == 0 )
     {
-        movefta();//ST 2
-        moveweapons();          //ST 5 (must be last)
+        { PROF_BEGIN(PROF_LFTA); movefta(); PROF_END(PROF_LFTA); }   //ST 2
+        { PROF_BEGIN(PROF_LWEAPONS); moveweapons(); PROF_END(PROF_LWEAPONS); }    //ST 5 (must be last)
+        { PROF_BEGIN(PROF_LOTHER);
         movetransports();       //ST 9
 
         moveplayers();          //ST 10
         movefallers();          //ST 12
         moveexplosions();       //ST 4
+        PROF_END(PROF_LOTHER); }
 
-        moveactors();           //ST 1
-        moveeffectors();        //ST 3
+        { PROF_BEGIN(PROF_LACTORS); moveactors(); PROF_END(PROF_LACTORS); }       //ST 1
+        { PROF_BEGIN(PROF_LEFFECTORS); moveeffectors(); PROF_END(PROF_LEFFECTORS); }  //ST 3
 
-        movestandables();       //ST 6
+        { PROF_BEGIN(PROF_LSTANDABLES); movestandables(); PROF_END(PROF_LSTANDABLES); }  //ST 6
+        { PROF_BEGIN(PROF_LOTHER);
         doanimations();
         movefx();               //ST 11
+        PROF_END(PROF_LOTHER); }
     }
 
     fakedomovethingscorrect();

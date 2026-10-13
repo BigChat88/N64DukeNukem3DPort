@@ -37,6 +37,10 @@ static uint8_t  checking_ifelse,parsing_state;
 char *last_used_text;
 static short num_squigilly_brackets;
 static int32_t last_used_size;
+#if PLATFORM_N64
+// The fire button was let go since the player died (ifhitspace).
+static uint8_t n64_fire_released[MAXPLAYERS];
+#endif
 
 static short g_i,g_p;
 static int32_t g_x;
@@ -2935,6 +2939,9 @@ static uint8_t parse_slow(void)
             break;
         case 42:
             insptr++;
+#if PLATFORM_N64
+            n64_fire_released[g_p] = 0;     // (see ifhitspace)
+#endif
 
             if(ud.multimode < 2)
             {
@@ -3158,7 +3165,24 @@ static uint8_t parse_slow(void)
             parseifelse( (( hittype[g_i].floorz - hittype[g_i].ceilingz ) >> 8 ) < *insptr);
             break;
         case 63:
+#if PLATFORM_N64
+            // ifhitspace. A dead player also restarts with the fire button
+            // (quote 13 says so on the N64, see compilecons): a new press,
+            // after letting go of the one that may still be held from the
+            // fight. Only when dead: alive, it is the use key (talking,
+            // the statue...), and firing must not do those.
+            if (sprite[ps[g_p].i].extra > 0)
+                parseifelse( sync[g_p].bits&(1<<29));
+            else
+            {
+                if (!(sync[g_p].bits&(1<<2)))
+                    n64_fire_released[g_p] = 1;
+                parseifelse( (sync[g_p].bits&(1<<29)) ||
+                             (n64_fire_released[g_p] && (sync[g_p].bits&(1<<2))) );
+            }
+#else
             parseifelse( sync[g_p].bits&(1<<29));
+#endif
             break;
         case 64:
             parseifelse(sector[g_sp->sectnum].ceilingstat&1);

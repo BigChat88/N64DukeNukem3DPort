@@ -22,6 +22,7 @@
 #define N64_OVL_FLIP_Y      4   // tile drawn upside down
 #define N64_OVL_FLIP_X      8   // tile drawn mirrored
 #define N64_OVL_TRANSPOSED  16  // tile columns are screen rows (ANM frames)
+#define N64_OVL_COLUMNS     32  // (internal) masked columns, n64_overlay_columns_begin
 
 // Turns capture on (nesting allowed) / off around the code drawing the
 // weapon, the crosshair and the menus.
@@ -48,6 +49,14 @@ void n64_overlay_flush(const void *data, int bytes);
 // 2048 = full turn) and zoomed to cover the window. Replaces rendering the
 // view into a tile and rotating it on the CPU.
 void n64_view_tilt(int ang, int x1, int y1, int x2, int y2);
+
+// Masked columns (wall sprites) drawn by the RDP over the frame, at their
+// place in the overlay's order: begin makes room for count columns of tile
+// (size bytes, kept locked like the sprites'), then n64_cols_add_to(&n64_mcols,
+// ...) records each one (n64_columns.h), end closes the item. Returns 0 if
+// there is no room: the caller draws them on the CPU.
+int n64_overlay_columns_begin(int count, const uint8_t *tile, int32_t size, uint8_t *lock);
+void n64_overlay_columns_end(void);
 
 // Most clip rectangles one sprite can have (n64_overlay_add_strips).
 #define N64_OVL_MAX_STRIPS  48

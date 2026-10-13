@@ -125,7 +125,7 @@ tag, the code and the binaries always match. Pull requests only build and test.
 |---|---|
 | Stick up / down | Walk forward / back |
 | Stick left / right | Turn (analog: gentle near the center, fast at the edge) |
-| Z | Fire |
+| Z | Fire (dead: restart the level) |
 | R | Open / use |
 | A | Jump |
 | B (hold) | Run (with "RUN ALWAYS" on in Game Options: walk) |
@@ -154,6 +154,8 @@ tag, the code and the binaries always match. Pull requests only build and test.
   without a player (A button at 8 and 9.5 s, stick up from 12 to 14 s). Buttons:
   `A B Z L R S`, stick `U D < >`, C buttons `u d l r`.
 - A normal build (without `ARGS`/`INPUT`) never keeps those test options.
+- `libdragon make RDP_WALL_SPRITES=0`: opaque wall sprites (fences) are drawn on the CPU
+  again (by default the RDP draws them when nothing nearer drawn on the CPU covers them).
 - `libdragon make RDP_COLUMNS=0`: walls and sky are drawn on the CPU again (by default the
   RDP draws them, see `src/n64/n64_columns.h`), for comparison.
 - `libdragon make GOD=1`: the player does not die (for measuring: the dead player's view is
@@ -171,6 +173,43 @@ tag, the code and the binaries always match. Pull requests only build and test.
 - `libdragon make WARNINGS=1 BUILD_DIR=build/warnings engine`: builds with the warnings the
   Makefile turns off for the 1996 code, in its own folder. `src/n64` is always built with
   them on, as errors.
+
+## Measuring performance
+
+A benchmark build gives the same views on every run, so that two builds can be compared:
+
+```sh
+libdragon make BENCH=20               # 20 s per level
+libdragon make BENCH=20 PROFILE=1     # plus the time of each part of a frame
+```
+
+The ROM boots straight into E1L1 (`ARGS="/v2 /l1"` for Nuclear Winter's ROM, `/v3` for
+the other expansions). In each level the player, who cannot die, turns in place where the
+level starts, about one turn every 4.3 s; after 20 s the next level starts, and so on
+through every level of the GRP. At each level change the log gets a line like
+
+```
+bench: E1L1 frames=342 avg=52.31ms fps=19.1 worst=96.0ms fps30=40 fps20=180 fps15=98 slower=24
+```
+
+counting from 3 s after the level starts (fade in, first loads): the mean frame time, the
+worst frame and how many frames ran at 30 fps or more, 20-30, 15-20 and below 15.
+
+Capture the log (ares prints it on its standard output; on a flashcart, UNFLoader in debug
+mode shows what the game sends over USB) and turn it into tables:
+
+```sh
+python tools/perf_report.py run.log                # frame times, sections, CON opcodes
+python tools/perf_report.py before.log after.log   # what a change did, level by level
+python tools/perf_report.py run.log --csv run.csv  # every figure, for a spreadsheet
+```
+
+With `SHOTS=1` as well, the log gets one screenshot per level, 6 s in, which
+`python tools/shots.py run.log shots/` turns into PNG files: to check the rendering of a
+change without looking at a screen.
+
+Measure on the console you care about (stock, or overclocked) and keep the log of each
+build: a change is worth it if it shows up in the comparison, not in a single level.
 
 ## License
 

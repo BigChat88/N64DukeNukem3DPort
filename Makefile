@@ -167,6 +167,11 @@ endif
 ifneq ($(RDP_COLUMNS),)
 N64_CFLAGS += -DN64_RDP_COLUMNS=$(RDP_COLUMNS)
 endif
+# Wall sprites drawn by the RDP when nothing drawn on the CPU is in front of
+# them (engine.c, n64_maskwallscan_rdp), on by default: RDP_WALL_SPRITES=0.
+ifneq ($(RDP_WALL_SPRITES),)
+N64_CFLAGS += -DN64_RDP_WALL_SPRITES=$(RDP_WALL_SPRITES)
+endif
 
 # Options that change every object: rebuild everything when they change,
 # instead of linking objects built with different settings.
@@ -195,13 +200,16 @@ endif
 # otherwise (an expansion's ROM: ARGS="/v2 /l1" for Nuclear Winter, /v3 the others).
 ifneq ($(BENCH),)
 N64_CFLAGS += -DN64_TEST_BENCH -DN64_TEST_GOD
+ifneq ($(SHOTS),)
+N64_CFLAGS += -DN64_SHOTS
+endif
 ifeq ($(LEVELSKIP),)
 N64_CFLAGS += -DN64_TEST_LEVELSKIP=$(BENCH)
 endif
 ARGS ?= /v1 /l1
 endif
 
-BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE) bench=$(BENCH)
+BUILD_OPTIONS = profile=$(PROFILE) rdp_columns=$(RDP_COLUMNS) levelskip=$(LEVELSKIP) levelcycle=$(LEVELCYCLE) god=$(GOD) quake=$(QUAKE) detonate=$(DETONATE) bench=$(BENCH) shots=$(SHOTS) rdp_wall_sprites=$(RDP_WALL_SPRITES)
 $(shell mkdir -p $(BUILD_DIR); echo '$(BUILD_OPTIONS)' | cmp -s - $(BUILD_DIR)/options.txt || echo '$(BUILD_OPTIONS)' > $(BUILD_DIR)/options.txt)
 $(OBJS): $(BUILD_DIR)/options.txt
 

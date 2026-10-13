@@ -37,6 +37,12 @@
 #define FX_NUM_PAN         32    // MV_NumPanPositions
 #define FX_MAX_PAN         (FX_NUM_PAN - 1)
 #define FX_MIX_VOLUME(v)   ((max(0, min((v), 255)) * (FX_MAX_LEVEL + 1)) >> 8)
+// Highest sample the mixer's resampler takes without saturating, out of 128
+// (8-bit; << 8 for 16-bit): see make_resident. The sounds not made resident
+// are all scaled down to it as fx_read converts them, and their channel
+// volume raised by as much (FX_STREAM_GAIN).
+#define FX_PEAK            100
+#define FX_STREAM_GAIN     (128.0f / FX_PEAK)
 
 typedef struct {
     const uint8_t *data;        // in memory, or
@@ -75,6 +81,10 @@ typedef struct {
     fx_segment_t seg[FX_MAX_SEGMENTS];
     int numseg;
     int bits;                   // 8 (unsigned) or 16 (little endian signed)
+    int resident;               // seg[0] holds the mixer's own format: the RSP
+                                // reads it straight from memory (see make_resident)
+    float gain;                 // channel volume factor making up for the samples
+                                // scaled down to FX_PEAK
     int rate;                   // sample rate of the data, in Hz
     int handle;                 // 0 when the voice is free
     int priority;
@@ -204,24 +214,24 @@ static void fx_read(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool se
             {
                 if (seg->data)
                     for (k = 0; k < run; k++)
-                        out8[i + k] = seg->data[pos + k] ^ 0x80;
+                        out8[i + k] = (int8_t)(seg->data[pos + k] ^ 0x80) * FX_PEAK >> 7;
                 else
                 {
                     rom_read(out8 + i, seg->rom + pos, run);
                     for (k = 0; k < run; k++)
-                        out8[i + k] ^= 0x80;
+                        out8[i + k] = (int8_t)(out8[i + k] ^ 0x80) * FX_PEAK >> 7;
                 }
             }
             else
             {
                 if (seg->data)
                     for (k = 0; k < run; k++)
-                        out16[i + k] = (int16_t)read_le16(seg->data + (pos + k) * 2);
+                        out16[i + k] = (int16_t)read_le16(seg->data + (pos + k) * 2) * FX_PEAK >> 7;
                 else
                 {
                     rom_read(out16 + i, seg->rom + pos * 2, run * 2);
                     for (k = 0; k < run; k++)
-                        out16[i + k] = (int16_t)read_le16((const uint8_t *)&out16[i + k]);
+                        out16[i + k] = (int16_t)read_le16((const uint8_t *)&out16[i + k]) * FX_PEAK >> 7;
                 }
             }
             i += run;
@@ -364,6 +374,149 @@ static int parse_wav(fx_voice_t *v, const uint8_t *ptr)
     return v->numseg > 0 && v->rate > 0;
 }
 
+/*
+ * Sounds loaded in memory are played by the RSP straight from there (the
+ * mixer's resident waveforms): the CPU does not copy every sample through
+ * fx_read, and the channel needs no sample buffer. The first time a loaded
+ * file is played its samples are fixed up in place, and its header gives
+ * way to a descriptor (the game only looks at the first byte, to pick VOC
+ * or WAV: both lead here). A file the cache drops and loads again from the
+ * GRP is fixed up again. What the mixer needs (found on the N64 Doom port,
+ * where the same sounds crackled):
+ *  - its format: signed 8-bit or big endian 16-bit samples;
+ *  - samples starting on a 16 byte boundary, and not ending in a cache line
+ *    they share with something else: 8-bit samples elsewhere crackled;
+ *  - peaks under ~80% of full scale: its 4-tap resampler overshoots by up to
+ *    25% on sharp waveforms and saturates *before* the channel volume, so a
+ *    sound peaking near full scale (90% of Duke's) crackles at any volume.
+ *    Louder ones are scaled down to FX_PEAK and their channel volume is
+ *    raised by as much (fx_resident_t.gain), so they keep their loudness;
+ *  - a few samples to read past the end: the end is moved back to the last
+ *    full cache line, and a sound that does not loop fades out over its last
+ *    FX_TAIL_FADE samples (some end on a loud sample: a click).
+ */
+#define FX_RESIDENT_MAGIC  "N64FXRS"         // (short: the descriptor must fit before the samples)
+#define FX_TAIL_FADE       64
+typedef struct {
+    char magic[8];
+    uint32_t rate;
+    uint16_t bits;
+    uint16_t gain;              // channel volume factor, 8.8 fixed point (>= 1.0)
+    uint32_t len;               // in samples
+    uint32_t offset;            // of the samples in the file's buffer
+} fx_resident_t;
+
+static int parse_resident(fx_voice_t *v, const uint8_t *ptr)
+{
+    fx_resident_t r;
+
+    memcpy(&r, ptr, sizeof(r));
+    if (memcmp(r.magic, FX_RESIDENT_MAGIC, sizeof(r.magic)) != 0)
+        return 0;
+    v->numseg = 1;
+    v->seg[0] = (fx_segment_t){ ptr + r.offset, 0, r.len };
+    v->bits = r.bits;
+    v->rate = r.rate;
+    v->gain = r.gain / 256.0f;
+    v->resident = 1;
+    return 1;
+}
+
+static inline int sample_get(const uint8_t *data, int bits, uint32_t i)
+{
+    return bits == 8 ? (int8_t)data[i] : (int16_t)((data[i*2] << 8) | data[i*2+1]);
+}
+
+static inline void sample_put(uint8_t *data, int bits, uint32_t i, int s)
+{
+    if (bits == 8)
+        data[i] = (uint8_t)(int8_t)s;
+    else
+    {
+        data[i*2] = (uint16_t)s >> 8;
+        data[i*2+1] = (uint8_t)s;
+    }
+}
+
+// Turns the parsed file at ptr into a resident one, when it can: a single
+// block of samples in memory (not streamed from ROM). looped: the game plays
+// it in a loop (no fade at its end).
+static void make_resident(fx_voice_t *v, uint8_t *ptr, int looped)
+{
+    fx_resident_t r;
+    uint32_t from, to, bytes, len, i;
+    int bps = v->bits / 8, peak = 0, limit = v->bits == 8 ? FX_PEAK : FX_PEAK << 8;
+    uint8_t *data;
+
+    if (v->numseg != 1 || !v->seg[0].data)
+        return;
+    // (The 16 byte boundary in memory: the game's cache only aligns the file
+    // itself to 8 bytes or less, so an offset within it does not do.)
+    from = v->seg[0].data - ptr;
+    to = (((uintptr_t)ptr + from) & ~(uintptr_t)15) - (uintptr_t)ptr;
+    len = v->seg[0].len;
+    if ((int32_t)to < (int32_t)sizeof(r) || len < 64)
+        return;
+    bytes = len * bps;
+    data = ptr + to;
+    memmove(data, ptr + from, bytes);
+
+    // Signed, native order; the peak.
+    for (i = 0; i < len; i++)
+    {
+        int s = v->bits == 8 ? (int8_t)(data[i] ^ 0x80) : (int16_t)(data[i*2] | (data[i*2+1] << 8));
+        sample_put(data, v->bits, i, s);
+        if (abs(s) > peak)
+            peak = abs(s);
+    }
+    // Under the resampler's limit; the channel volume makes up for it.
+    r.gain = 256;
+    if (peak > limit)
+    {
+        for (i = 0; i < len; i++)
+            sample_put(data, v->bits, i, sample_get(data, v->bits, i) * limit / peak);
+        r.gain = (peak * 256 + limit - 1) / limit;
+    }
+    // The end: back to the last cache line of its own, with a line to spare
+    // for the resampler to read past it; faded out unless it loops.
+    if (!looped)
+    {
+        len = ((((uintptr_t)data + len * bps) & ~(uintptr_t)15) - 16 - (uintptr_t)data) / bps;
+        for (i = 0; i < FX_TAIL_FADE && len >= 2 * FX_TAIL_FADE; i++)
+            sample_put(data, v->bits, len - 1 - i,
+                       sample_get(data, v->bits, len - 1 - i) * (int)i / FX_TAIL_FADE);
+    }
+    data_cache_hit_writeback(data, bytes);     // the RSP reads it from RDRAM
+
+    memset(&r.magic, 0, sizeof(r.magic));
+    memcpy(r.magic, FX_RESIDENT_MAGIC, sizeof(r.magic));
+    r.rate = v->rate;
+    r.bits = v->bits;
+    r.len = len;
+    r.offset = to;
+    memcpy(ptr, &r, sizeof(r));
+
+    v->seg[0].data = data;
+    v->seg[0].len = len;
+    v->gain = r.gain / 256.0f;
+    v->resident = 1;
+}
+
+// A sound given to the FX_Play functions: VOC or WAV (in the order given),
+// in memory or streamed from ROM, made resident when it can be.
+static int parse_sound(fx_voice_t *v, uint8_t *ptr, int voc_first, int looped)
+{
+    v->resident = 0;
+    v->gain = FX_STREAM_GAIN;
+    if (parse_resident(v, ptr))
+        return 1;
+    if (voc_first ? !parse_voc(v, ptr) && !parse_wav(v, ptr)
+                  : !parse_wav(v, ptr) && !parse_voc(v, ptr))
+        return 0;
+    make_resident(v, ptr, looped);
+    return 1;
+}
+
 static int total_length(const fx_voice_t *v)
 {
     int i, len = 0;
@@ -432,16 +585,25 @@ static fx_voice_t *alloc_voice(int priority)
 // The sound effects at full volume drowned the music: the General MIDI
 // soundfont plays quieter than DOS' OPL/wavetable music, and a synth voice
 // can not go past its CC7 maximum (nor a mixer channel past 1.0). The master
-// volume boosts everything by MIX_MASTER and the effects are scaled back
-// down by FX_GAIN: effectively the music gains MIX_MASTER over them.
-#define MIX_MASTER 2.5f
-#define FX_GAIN (0.6f / MIX_MASTER)
+// volume (which the mixer folds into every channel's volume) gives the
+// music MIX_MASTER, and the effects are scaled down by FX_GAIN against it.
+//
+// Headroom: the channels are summed after their volumes, and the sum
+// clips. With the master at 2.5 a single effect peaked at 0.6 of full scale
+// and any two loud ones together (a shot and an explosion) crackled. Now one
+// peaks at ~0.24 (FX_GAIN, with make_resident's gain making up for FX_PEAK),
+// room for a few at once; the music keeps the same balance against them.
+#define MIX_MASTER 1.0f
+#define FX_GAIN    0.24f
 
 static void set_volume(fx_voice_t *v, int left, int right)
 {
     float scale = FX_GAIN * (float)total_volume / (255.0f * FX_MAX_LEVEL);
-    float l = FX_MIX_VOLUME(left) * scale;
-    float r = FX_MIX_VOLUME(right) * scale;
+    float l, r;
+
+    scale *= v->gain;
+    l = FX_MIX_VOLUME(left) * scale;
+    r = FX_MIX_VOLUME(right) * scale;
 
     if (reverse_stereo)
         mixer_ch_set_vol(voice_channel(v), r, l);
@@ -477,6 +639,8 @@ static int start_voice(const fx_voice_t *parsed, int looped, int pitchoffset,
     memcpy(v->seg, parsed->seg, sizeof(v->seg));
     v->numseg = parsed->numseg;
     v->bits = parsed->bits;
+    v->resident = parsed->resident;
+    v->gain = parsed->gain;
     v->rate = parsed->rate;
     v->priority = priority;
     v->callbackval = callbackval;
@@ -496,7 +660,10 @@ static int start_voice(const fx_voice_t *parsed, int looped, int pitchoffset,
     v->wave.frequency = v->rate;
     v->wave.len = len;
     v->wave.loop_len = looped ? len : 0;
-    v->wave.read = fx_read;
+    if (v->resident)
+        v->wave.mem = v->seg[0].data;       // (read by the RSP: no fx_read)
+    else
+        v->wave.read = fx_read;
     v->wave.ctx = v;
 
     set_volume(v, left, right);
@@ -640,7 +807,7 @@ int FX_Init(int SoundCard, int numvoices, int numchannels, int samplebits, unsig
     if (fx_installed)
         FX_Shutdown();
 
-    num_voices = max(1, min(min(numvoices, FX_MAX_VOICES), MIXER_MAX_CHANNELS - N64_MUSIC_CHANNELS));
+    num_voices = max(1, min(min(numvoices, FX_MAX_VOICES), MIXER_MAX_CHANNELS - N64_MUSIC_CHANNELS - 1));
     memset(voices, 0, sizeof(voices));
 
     calc_pan_table();   // (pitch.c's table is precomputed: no PITCH_Init)
@@ -649,8 +816,9 @@ int FX_Init(int SoundCard, int numvoices, int numchannels, int samplebits, unsig
     if (!fx_bounce)
         fx_bounce = malloc_uncached(FX_BOUNCE_SIZE);
     // Sound effects use channels [0, num_voices), the music synthesizer the
-    // N64_MUSIC_CHANNELS after them.
-    mixer_init(num_voices + N64_MUSIC_CHANNELS);
+    // N64_MUSIC_CHANNELS after them, and the last one keeps the mixer from
+    // ever being left with the effects alone (see below).
+    mixer_init(num_voices + N64_MUSIC_CHANNELS + 1);
     mixer_set_vol(MIX_MASTER);
     for (i = 0; i < num_voices; i++)
     {
@@ -664,6 +832,28 @@ int FX_Init(int SoundCard, int numvoices, int numchannels, int samplebits, unsig
         // with this limit (~13 KB each at 3x): the rare note above it is
         // clamped (played lower).
         mixer_ch_set_limits(i, 16, 3 * 44100, 0);
+    }
+
+    // Silence, looping for good at volume 0 on its own channel. The N64 Doom
+    // port found libdragon's mixer crackling on the sound effects whenever
+    // they were the only channels playing (there: once a song had ended), and
+    // kept its music channel always running, muted, against it. Here the
+    // music synthesizer stops its channels between notes and songs, or for
+    // good with the music off.
+    {
+        static int16_t silence[64] __attribute__((aligned(16)));
+        static waveform_t keepalive;
+        memset(&keepalive, 0, sizeof(keepalive));
+        keepalive.name = "silence";
+        keepalive.bits = 16;
+        keepalive.channels = 1;
+        keepalive.frequency = 8000;
+        keepalive.len = keepalive.loop_len = sizeof(silence) / sizeof(silence[0]);
+        keepalive.mem = silence;
+        data_cache_hit_writeback(silence, sizeof(silence));
+        mixer_ch_set_limits(i, 16, 8000, 0);
+        mixer_ch_set_vol(i, 0.0f, 0.0f);
+        mixer_ch_play(i, &keepalive);
     }
 
     fx_installed = 1;
@@ -783,8 +973,9 @@ int FX_PlayLoopedVOC(uint8_t *ptr, int32_t loopstart, int32_t loopend,
     fx_voice_t parsed;
 
     // (The game picks VOC or WAV from the first byte, which for a sound
-    // streamed from ROM is our stream header: either may be either.)
-    if (!parse_voc(&parsed, ptr) && !parse_wav(&parsed, ptr))
+    // streamed from ROM or made resident is our own header: either may be
+    // either.)
+    if (!parse_sound(&parsed, ptr, 1, loopstart >= 0))
         return FX_Warning;
     return start_voice(&parsed, loopstart >= 0, pitchoffset, left, right, priority, callbackval);
 }
@@ -801,7 +992,7 @@ int FX_PlayLoopedWAV(uint8_t *ptr, int32_t loopstart, int32_t loopend,
 {
     fx_voice_t parsed;
 
-    if (!parse_wav(&parsed, ptr) && !parse_voc(&parsed, ptr))
+    if (!parse_sound(&parsed, ptr, 0, loopstart >= 0))
         return FX_Warning;
     return start_voice(&parsed, loopstart >= 0, pitchoffset, left, right, priority, callbackval);
 }
@@ -837,6 +1028,8 @@ int FX_PlayLoopedRaw(uint8_t *ptr, uint32_t length, char *loopstart,
     fx_voice_t parsed;
 
     parsed.seg[0] = (fx_segment_t){ ptr, 0, length };
+    parsed.resident = 0;
+    parsed.gain = FX_STREAM_GAIN;
     parsed.numseg = 1;
     parsed.bits = 8;
     parsed.rate = rate;

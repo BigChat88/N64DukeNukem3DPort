@@ -15,7 +15,7 @@ $(BUILD)/test_fx: test_fx.c ../../src/n64/n64_fx.c stubs/libdragon.h
 
 $(addprefix $(BUILD)/,$(TESTS)):
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) $(TEST_CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) $(TEST_CFLAGS) -o $@ $< -lm
 
 test: $(addprefix $(BUILD)/,$(TESTS))
 	@set -e; for t in $^; do echo "== $$t"; $$t; done

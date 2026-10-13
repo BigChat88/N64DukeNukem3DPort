@@ -5401,6 +5401,105 @@ static void ceilspritescan (int32_t x1, int32_t x2)
     faketimerhandler();
 }
 
+#if defined(PLATFORM_N64) && N64_RDP_COLUMNS
+/*
+ * maskwallscan() for the RDP: the columns of a wall sprite, recorded into
+ * the overlay (n64_overlay_columns_begin) instead of drawn, with the same
+ * per-column maths. drawmasks only sends here the sprites that no nearer
+ * sprite drawn on the CPU overlaps (n64_sprite_rdp): the overlay is drawn
+ * over the whole frame. Returns 0 if the RDP cannot take them (tile too big
+ * for its loads, lists full): the caller draws them with maskwallscan.
+ */
+static int n64_maskwallscan_rdp(int32_t x1, int32_t x2,
+                                short *uwal, short *dwal,
+                                int32_t *swal, int32_t *lwal)
+{
+    int32_t x, tileWidth, tsizy, xnice, col;
+    const int shift = globalshiftval & 31;
+    const int logw = 32 - shift;
+    uint8_t *fpalookup, *tex;
+
+    tileWidth = tiles[globalpicnum].dim.width;
+    tsizy = tiles[globalpicnum].dim.height;
+    if ((tileWidth <= 0) || (tsizy <= 0))
+        return 1;                       // nothing to draw (as maskwallscan)
+    if ((logw < 3) || (logw > 9) || (tileWidth >= 1024) || (tsizy > 1024) ||
+        frameplace != (uint8_t *)n64_screen_buffer())
+        return 0;
+
+    setgotpic(globalpicnum);
+    if ((uwal[x1] > ydimen) && (uwal[x2] > ydimen))
+        return 1;
+    if ((dwal[x1] < 0) && (dwal[x2] < 0))
+        return 1;
+
+    TILE_MakeAvailable(globalpicnum);
+    tex = tiles[globalpicnum].data;
+    if (!n64_overlay_columns_begin(x2-x1+1, tex, tileWidth*tsizy, &tiles[globalpicnum].lock))
+        return 0;
+
+    xnice = (pow2long[picsiz[globalpicnum]&15] == tileWidth);
+    if (xnice)
+        tileWidth--;
+    fpalookup = palookup[globalpal];
+
+    for(x=x1; x<=x2; x++)
+    {
+        int32_t y1 = max(uwal[x],startumost[x+windowx1]-windowy1);
+        int32_t y2 = min(dwal[x],startdmost[x+windowx1]-windowy1);
+        int32_t vince;
+        uint32_t vplce;
+
+        if (y2 <= y1)
+            continue;
+        col = lwal[x] + globalxpanning;
+        if (col >= tileWidth)
+        {
+            if (xnice == 0)
+                col %= tileWidth;
+            else
+                col &= tileWidth;
+        }
+        vince = swal[x]*globalyscale;
+        vplce = globalzd + vince*(y1-globalhoriz+1);
+        n64_cols_add_to(&n64_mcols, windowx1+x, windowy1+y1, windowy1+y2,
+                        tex, tsizy, tiles[globalpicnum].dim.width, col, logw,
+                        vplce, vince, shift,
+                        fpalookup+(getpalookup((int32_t)mulscale16(swal[x],globvis),globalshade)<<8));
+    }
+    n64_overlay_columns_end();
+    return 1;
+}
+#endif
+
+// Can a wall sprite go to the RDP (n64_maskwallscan_rdp)? Opaque, with a
+// tile its loads can take. (A variable, not a constant, so that turning it
+// off for a comparison leaves the code, and its place in the instruction
+// cache, the same: make RDP_WALL_SPRITES=0.)
+#ifndef N64_RDP_WALL_SPRITES
+#define N64_RDP_WALL_SPRITES 1
+#endif
+static volatile int n64_rdp_wall_sprites = N64_RDP_WALL_SPRITES;
+
+static int n64_wall_sprite_rdp_ok(spritetype *tspr)
+{
+#if N64_RDP_COLUMNS
+    short tilenum = tspr->picnum;
+    int logw;
+
+    if (!n64_rdp_wall_sprites ||
+        (tspr->cstat&48) != 16 || (tspr->cstat&2) || (uint32_t)tilenum >= (uint32_t)MAXTILES)
+        return 0;
+    if (tiles[tilenum].animFlags&192)
+        tilenum += animateoffs(tilenum);
+    logw = (picsiz[tilenum]>>4);
+    if (pow2long[logw] != tiles[tilenum].dim.height) logw++;
+    return logw >= 3 && logw <= 9 && tiles[tilenum].dim.width < 1024;
+#else
+    return 0;
+#endif
+}
+
 #ifdef N64_PROFILE
 #define drawsprite n64p_drawsprite
 #endif
@@ -5918,7 +6017,15 @@ static void drawsprite (int32_t snum)
             }
 
         if ((cstat&2) == 0)
+        {
+#if defined(PLATFORM_N64) && N64_RDP_COLUMNS
+            // (Drawn by the RDP over the frame when nothing nearer drawn on
+            // the CPU overlaps it, see drawmasks.)
+            if (!n64_sprite_rdp ||
+                !n64_maskwallscan_rdp(pvWalls[MAXWALLSB-1].screenSpaceCoo[0][VEC_COL],pvWalls[MAXWALLSB-1].screenSpaceCoo[1][VEC_COL],uwall,dwall,swall,lwall))
+#endif
             maskwallscan(pvWalls[MAXWALLSB-1].screenSpaceCoo[0][VEC_COL],pvWalls[MAXWALLSB-1].screenSpaceCoo[1][VEC_COL],uwall,dwall,swall,lwall);
+        }
         else
             transmaskwallscan(pvWalls[MAXWALLSB-1].screenSpaceCoo[0][VEC_COL],pvWalls[MAXWALLSB-1].screenSpaceCoo[1][VEC_COL]);
     }
@@ -6276,7 +6383,7 @@ static void drawsprite (int32_t snum)
             tsethlineshift(x,y);
 
         /* Draw it! */
-        ceilspritescan(lx,rx-1);
+        { PROF_BEGIN(PROF_SPRFSCAN); ceilspritescan(lx,rx-1); PROF_END(PROF_SPRFSCAN); }
     }
 
     if (automapping == 1) show2dsprite[spritenum>>3] |= pow2char[spritenum&7];
@@ -6288,7 +6395,13 @@ static void drawsprite (int32_t snum)
 static void drawsprite (int32_t snum)
 {
     int32_t cstat = tspriteptr[snum]->cstat;
-    if ((cstat&48) != 0)
+    if ((cstat&48) == 16)
+    {
+        PROF_BEGIN(PROF_SPRWALL);
+        n64p_drawsprite(snum);
+        PROF_END(PROF_SPRWALL);
+    }
+    else if ((cstat&48) != 0)
     {
         PROF_BEGIN(PROF_SPRFLAT);
         n64p_drawsprite(snum);
@@ -6480,7 +6593,10 @@ void drawmasks(void)
                 n64_sprite_ok[k] = 1;       // off screen: order does not matter
                 continue;
             }
-            if ((tspriteptr[k]->cstat&48) == 0)
+            // Face sprites, and opaque wall sprites the RDP can load (see
+            // n64_maskwallscan_rdp), go to the RDP if no nearer sprite drawn
+            // on the CPU shares their columns.
+            if ((tspriteptr[k]->cstat&48) == 0 || n64_wall_sprite_rdp_ok(tspriteptr[k]))
             {
                 for (x = l; x <= r; x++)
                     if (cpu_cols[x])

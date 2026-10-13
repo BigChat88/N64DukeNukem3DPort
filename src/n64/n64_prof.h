@@ -38,13 +38,21 @@ enum {
     PROF_COLEND,        //   part of "rooms": n64_cols_end (RDP punches the column holes)
     PROF_SPRRDP,        //   part of "masks": face sprites drawn by the RDP (setup)
     PROF_SPRCPU,        //   part of "masks": face sprites drawn on the CPU
-    PROF_SPRFLAT,       //   part of "masks": wall and floor sprites (CPU)
+    PROF_SPRFLAT,       //   part of "masks": floor sprites (CPU)
     PROF_MASKWALL,      //   part of "masks": masked walls (CPU)
-    PROF_COLADD,        //   part of "walls": n64_cols_add
-    PROF_WALLCPU,
+    PROF_WALLCPU,       //   part of "walls": walls drawn on the CPU (not the RDP)
     PROF_BUNCH,         //   part of "rooms": choosing the closest bunch (bunchfront)
     PROF_DRAWALLS,      //   part of "rooms": drawalls (walls, flats, sky of a bunch)
-    PROF_WALLMOST,      //   part of "drawalls": wallmost/owallmost       //   part of "walls": walls drawn on the CPU (not the RDP)
+    PROF_WALLMOST,      //   part of "drawalls": wallmost/owallmost
+    PROF_LPLAYER,       //   part of "logic": processinput, checksectors (the player)
+    PROF_LFTA,          //   part of "logic": movefta (sleeping actors waking up)
+    PROF_LWEAPONS,      //   part of "logic": moveweapons (projectiles)
+    PROF_LACTORS,       //   part of "logic": moveactors (enemies)
+    PROF_LEFFECTORS,    //   part of "logic": moveeffectors (sector effects)
+    PROF_LSTANDABLES,   //   part of "logic": movestandables
+    PROF_LOTHER,        //   part of "logic": transports, players, fallers, explosions, animations, fx
+    PROF_SPRWALL,       //   part of "masks": wall sprites (CPU)
+    PROF_SPRFSCAN,      //   part of "sprflat": drawing the floor sprite's lines (ceilspritescan)
     PROF_COUNT
 };
 

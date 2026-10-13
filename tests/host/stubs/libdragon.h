@@ -121,11 +121,13 @@ typedef struct {
     int loop_len;
     WaveformRead read;
     void *ctx;
+    const void *mem;
 } waveform_t;
 
 void *samplebuffer_append(samplebuffer_t *buf, int wlen);
 void dma_read(void *ram_address, pi_addr_t pi_address, unsigned long len);
 void *malloc_uncached(size_t size);
+void data_cache_hit_writeback(const void *addr, unsigned long length);
 void audio_init(const int frequency, int numbuffers);
 void audio_close(void);
 #define AUDIO_DEFAULT_LATENCY 0

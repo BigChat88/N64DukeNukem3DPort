@@ -303,8 +303,19 @@ int loadpics(char  *filename, char * gamedir)
         cachesize -= 65536L;
         if (cachesize < 65536) return(-1);
     }
+#ifdef PLATFORM_N64
+    {
+        // The cache on a 16 byte boundary (malloc only gives 8): allocache
+        // keeps every block at 16 byte multiples from its start, and the
+        // sounds in it are played by the RSP straight from there, whose
+        // mixer crackles on 8-bit samples not aligned to 16 (see n64_fx.c).
+        uint32_t skip = (16 - ((uintptr_t)pic & 15)) & 15;
+        initcache(pic + skip, (cachesize - skip) & ~15);
+    }
+#else
     initcache(pic,cachesize);
-    
+#endif
+
     for(i=0; i<MAXTILES; i++)
     {
         j = 15;

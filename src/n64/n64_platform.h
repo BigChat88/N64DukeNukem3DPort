@@ -52,6 +52,9 @@ int n64_menu_background(void);
 // (768 bytes, 6-bit VGA): the game's title screen. 0 if it cannot.
 int n64_menu_background_tile(const uint8_t *tile, int w, int h, const uint8_t *pal768);
 
+// SHOTS=1 builds: the next frame presented goes to the log, see n64_display.c.
+void n64_screenshot(const char *label);
+
 // True once _setgamemode() has set up the display and the RDP (n64_display.c).
 int n64_video_ready(void);
 

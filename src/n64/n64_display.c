@@ -86,13 +86,11 @@ static void rdp_done_callback(void *arg)
 #define COL_MAX_TILES   192             // tiles per frame
 #define COL_MAX_TLUTS   64              // shade tables per frame
 #define COL_LIST_WORDS  16384           // raw RDP commands of the textured pass
-#define COL_WORDS_MAX   14              // most commands one column can add
 // Most bytes of BUILD's 2 MB tile cache the walls of a frame keep locked for
 // the RDP (the overlay has its own budget, OVL_LOCK_BUDGET): past it a wall
 // is drawn on the CPU, instead of risking a cache all locked up.
 #define COL_LOCK_BUDGET (768 * 1024)
 
-static int cols_on = 0;                 // the main view is recording its columns
 static struct {
     const uint8_t *data;
     uint8_t *lock;
@@ -102,15 +100,24 @@ static int col_ntiles = 0;
 static int32_t col_locked_bytes = 0;
 static uint64_t *col_punch = NULL;      // raw RDP commands of the hole pass
 static uint64_t *col_list = NULL;       // raw RDP commands of the textured pass
-static uint64_t *col_pw = NULL, *col_lw = NULL;     // write positions (NULL: nothing recorded)
 static uint16_t *col_tluts = NULL;      // COL_MAX_TLUTS palettes
 static const uint8_t *col_tlut_src[COL_MAX_TLUTS];  // their shade tables
 static int col_ntluts = 0;
 static int col_tlut_version = 0;        // palette_version the palettes were built with
 static int palette_version = 0;         // changes with every VBE_setPalette
-// Texture state of the textured pass while it is written.
-static const uint8_t *col_cur_pal, *col_cur_tile;
-static int col_cur_col, col_cur_rows, col_cur_logw, col_off;
+n64_cols_t n64_cols;                    // the recorder's state (n64_columns.h)
+
+// Masked columns of the overlay (wall sprites, n64_overlay_columns_begin):
+// raw RDP commands like the walls', with their own palettes (index 255
+// transparent).
+#define OVLC_WORDS      4096            // commands of a frame
+#define OVLC_TLUTS      32              // palettes of a frame
+static uint64_t *ovlc_list = NULL;
+static uint16_t *ovlc_tluts = NULL;
+static const uint8_t *ovlc_tlut_src[OVLC_TLUTS];
+static int ovlc_ntluts = 0;
+static int ovlc_tlut_version = 0;       // palette_version they were built with
+n64_cols_t n64_mcols = { .masked = 1 };
 static uint16_t *tlut_keyed = NULL;     // screen palette with N64_HOLE_INDEX transparent
 
 #ifdef N64_PROFILE
@@ -123,7 +130,7 @@ uint32_t n64_prof_now(void)
 
 static void prof_report(int frames)
 {
-    static const char *names[PROF_COUNT] = { "rooms", "masks", "rest", "present", "weapon", "sbar", "console", "menus", "fta", "logic", "skydraw", "skyscan", "walls", "flats", "slopes", "sky", "tileload", "sndload", "audio", "con", "clipmove", "hitscan", "cansee", "getzrange", "scan", "animspr", "colend", "sprrdp", "sprcpu", "sprflat", "maskwall", "coladd", "wallcpu", "bunch", "drawalls", "wallmost" };
+    static const char *names[PROF_COUNT] = { "rooms", "masks", "rest", "present", "weapon", "sbar", "console", "menus", "fta", "logic", "skydraw", "skyscan", "walls", "flats", "slopes", "sky", "tileload", "sndload", "audio", "con", "clipmove", "hitscan", "cansee", "getzrange", "scan", "animspr", "colend", "sprrdp", "sprcpu", "sprflat", "maskwall", "wallcpu", "bunch", "drawalls", "wallmost", "lplayer", "lfta", "lweapons", "lactors", "leffectors", "lstandables", "lother", "sprwall", "sprfscan" };
     char line[1024];
     int i, n;
 
@@ -148,9 +155,8 @@ static void prof_report(int frames)
                n64_wall_fallback[3] / frames, n64_wall_fallback[4] / frames, n64_wall_fallback[5] / frames);
         memset(n64_wall_fallback, 0, sizeof(n64_wall_fallback));
         n64_log_memory("now");
-        extern int n64_cols_added;
-        debugf("  columns: %d per frame\n", n64_cols_added / frames);
-        n64_cols_added = 0;
+        debugf("  columns: %d per frame\n", n64_cols.added / frames);
+        n64_cols.added = 0;
     }
 }
 #endif
@@ -247,6 +253,12 @@ static void init_video(void)
     col_punch = memalign(16, (COL_MAX + 16) * sizeof(uint64_t));
     col_list = memalign(16, COL_LIST_WORDS * sizeof(uint64_t));
     col_tluts = memalign(16, COL_MAX_TLUTS * 256 * sizeof(uint16_t));
+    n64_cols.punch_end = col_punch + COL_MAX + 16;
+    n64_cols.list_end = col_list + COL_LIST_WORDS;
+    ovlc_list = memalign(16, OVLC_WORDS * sizeof(uint64_t));
+    ovlc_tluts = memalign(16, OVLC_TLUTS * 256 * sizeof(uint16_t));
+    n64_mcols.lw = ovlc_list;
+    n64_mcols.list_end = ovlc_list + OVLC_WORDS;
 
     video_ready = 1;
 }
@@ -258,37 +270,6 @@ static void init_video(void)
  * ------------------------------------------------------------------------
  */
 
-/*
- * Raw RDP commands (see the RDP command reference): the column passes are
- * written straight into memory and run with rdpq_exec.
- */
-#define RDP_CMD(id)     ((uint64_t)(id) << 56)
-#define RDP_SYNC_PIPE   RDP_CMD(0x27)
-#define RDP_SYNC_TILE   RDP_CMD(0x28)
-#define RDP_SYNC_LOAD   RDP_CMD(0x31)
-
-// SET_TEXTURE_IMAGE (0x3D) / SET_COLOR_IMAGE (0x3F).
-static inline uint64_t rdp_image(int id, int fmt, int size, int width, const void *addr)
-{
-    return RDP_CMD(id) | ((uint64_t)fmt << 53) | ((uint64_t)size << 51) |
-           ((uint64_t)(width - 1) << 32) | PhysicalAddr(addr);
-}
-
-// The layout shared by the rectangles, loads and the scissor: two 12-bit
-// coordinate pairs (10.2 fixed point) and a tile number.
-static inline uint64_t rdp_coords(int id, int a, int b, int tile, int c, int d)
-{
-    return RDP_CMD(id) | ((uint64_t)(a & 0xFFF) << 44) | ((uint64_t)(b & 0xFFF) << 32) |
-           ((uint64_t)tile << 24) | ((uint64_t)(c & 0xFFF) << 12) | (uint64_t)(d & 0xFFF);
-}
-
-// SET_TILE (0x35): s wraps every 2^masks texels (0: no wrap), t clamps.
-static inline uint64_t rdp_set_tile(int fmt, int size, int line, int tmem, int tile, int masks)
-{
-    return RDP_CMD(0x35) | ((uint64_t)fmt << 53) | ((uint64_t)size << 51) |
-           ((uint64_t)line << 41) | ((uint64_t)tmem << 32) | ((uint64_t)tile << 24) |
-           (1ull << 19) | ((uint64_t)masks << 4);
-}
 
 void *n64_screen_buffer(void)
 {
@@ -310,7 +291,7 @@ static void cols_release(void)
     col_ntiles = 0;
     col_locked_bytes = 0;
     col_ntluts = 0;
-    col_pw = col_lw = NULL;
+    n64_cols.pw = n64_cols.lw = NULL;
 }
 
 static int menubg_frame;               // (see n64_menu_background)
@@ -320,30 +301,30 @@ void n64_cols_begin(int on)
     n64_wait_rdp();   // the RDP may still be drawing the last frame's columns
     cols_release();
     menubg_frame = 0;   // a view is drawn over the menu background's holes
-    cols_on = on && video_ready;
-    if (!cols_on)
+    n64_cols.on = on && video_ready;
+    if (!n64_cols.on)
         return;
 
     // Hole pass: fill mode into the 8-bit frame, every column a hole. (In
     // fill mode rectangles include their right and bottom edges.)
-    col_pw = col_punch;
-    *col_pw++ = RDP_SYNC_PIPE;
-    *col_pw++ = rdp_image(0x3F, 4 /* I */, 1 /* 8 bpp */, N64_SCREEN_PITCH, framebuffer8);
-    *col_pw++ = rdp_coords(0x2D, 0, 0, 0, N64_SCREEN_W << 2, N64_SCREEN_H << 2);    // scissor
-    *col_pw++ = RDP_CMD(0x2F) | SOM_CYCLE_FILL;
-    *col_pw++ = RDP_CMD(0x37) | 0xFFFFFFFFull;  // fill color: N64_HOLE_INDEX in every byte
+    n64_cols.pw = col_punch;
+    *n64_cols.pw++ = RDP_SYNC_PIPE;
+    *n64_cols.pw++ = rdp_image(0x3F, 4 /* I */, 1 /* 8 bpp */, N64_SCREEN_PITCH, framebuffer8);
+    *n64_cols.pw++ = rdp_coords(0x2D, 0, 0, 0, N64_SCREEN_W << 2, N64_SCREEN_H << 2);    // scissor
+    *n64_cols.pw++ = RDP_CMD(0x2F) | SOM_CYCLE_FILL;
+    *n64_cols.pw++ = RDP_CMD(0x37) | 0xFFFFFFFFull;  // fill color: N64_HOLE_INDEX in every byte
 
     // Textured pass: 1 cycle mode, texture through the palette.
-    col_lw = col_list;
-    *col_lw++ = RDP_SYNC_PIPE;
-    *col_lw++ = RDP_CMD(0x2F) | SOM_CYCLE_1 | SOM_TLUT_RGBA16 | SOM_SAMPLE_POINT |
+    n64_cols.lw = col_list;
+    *n64_cols.lw++ = RDP_SYNC_PIPE;
+    *n64_cols.lw++ = RDP_CMD(0x2F) | SOM_CYCLE_1 | SOM_TLUT_RGBA16 | SOM_SAMPLE_POINT |
                 SOM_TF0_RGB | SOM_TF1_RGB | SOM_RGBDITHER_NONE | SOM_ALPHADITHER_NONE |
                 SOM_COVERAGE_DEST_ZAP;
-    *col_lw++ = RDP_CMD(0x3C) | (RDPQ_COMBINER1((0,0,0,TEX0), (0,0,0,TEX0)) & 0x00FFFFFFFFFFFFFFull);
-    col_cur_pal = col_cur_tile = NULL;
-    col_cur_col = col_cur_logw = -1;
-    col_cur_rows = 1;
-    col_off = 0;
+    *n64_cols.lw++ = RDP_CMD(0x3C) | (RDPQ_COMBINER1((0,0,0,TEX0), (0,0,0,TEX0)) & 0x00FFFFFFFFFFFFFFull);
+    n64_cols.cur_pal = n64_cols.cur_tile = NULL;
+    n64_cols.cur_col = n64_cols.cur_logw = -1;
+    n64_cols.cur_rows = 1;
+    n64_cols.off = 0;
 }
 
 void n64_cols_forget(void)
@@ -355,15 +336,9 @@ void n64_cols_forget(void)
 
 int n64_cols_active(void)
 {
-    return cols_on;
+    return n64_cols.on;
 }
 
-int n64_cols_reserve(int count)
-{
-    return cols_on &&
-           col_pw + count + 2 <= col_punch + COL_MAX + 16 &&
-           col_lw + count * COL_WORDS_MAX + 4 <= col_list + COL_LIST_WORDS;
-}
 
 int n64_cols_use_tile(const uint8_t *data, int32_t size, uint8_t *lock)
 {
@@ -404,7 +379,7 @@ static void col_tlut_build(int i)
 // when they are all taken. (A slot cannot be reused within the frame: the
 // RDP reads the palettes when the frame is presented, after all of them
 // have been written.)
-static const uint16_t *col_tlut_for(const uint8_t *palrow)
+const uint16_t *n64_cols_tlut_for(const uint8_t *palrow)
 {
     int i;
 
@@ -420,122 +395,27 @@ static const uint16_t *col_tlut_for(const uint8_t *palrow)
     return col_tluts + i * 256;
 }
 
-#ifdef N64_PROFILE
-int n64_cols_added;
-static int n64p_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
-                  int col, int logw, uint32_t vplce, int32_t vince, int shift,
-                  const uint8_t *palrow);
-int n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
-                  int col, int logw, uint32_t vplce, int32_t vince, int shift,
-                  const uint8_t *palrow)
-{
-    int added;
-    PROF_BEGIN(PROF_COLADD);
-    added = n64p_cols_add(sx, y1, y2, tile, tile_h, tile_w, col, logw, vplce, vince, shift, palrow);
-    PROF_END(PROF_COLADD);
-    n64_cols_added += added;
-    return added;
-}
-#define n64_cols_add n64p_cols_add
-static
-#endif
-int n64_cols_add(int sx, int y1, int y2, const uint8_t *tile, int tile_h, int tile_w,
-                  int col, int logw, uint32_t vplce, int32_t vince, int shift,
-                  const uint8_t *palrow)
-{
-    uint64_t *w = col_lw;
-    const uint16_t *pal = NULL;
-    int32_t ds, sfx;
-
-    if (palrow != col_cur_pal && !(pal = col_tlut_for(palrow)))
-        return 0;   // no palette slot left: drawn on the CPU
-
-    // Hole pass.
-    *col_pw++ = rdp_coords(0x36, sx << 2, (y2 - 1) << 2, 0, sx << 2, y1 << 2);
-
-    // Textured pass: a 1 pixel wide flipped texture rectangle over the tile
-    // column, with the column's shade table as palette.
-    if (palrow != col_cur_pal)
-    {
-        // The palette goes to the upper half of TMEM through tile 7. (A load
-        // also rewrites its tile's size: on the real RDP, the primitive before
-        // may still be reading the tiles, hence SYNC_TILE as well as
-        // SYNC_LOAD. Emulators run commands one at a time and never show it.)
-        *w++ = RDP_SYNC_LOAD;
-        *w++ = RDP_SYNC_TILE;
-        *w++ = rdp_image(0x3D, 0 /* RGBA */, 2 /* 16 bpp */, 256, pal);
-        *w++ = rdp_set_tile(4, 0, 0, 0x100, 7, 0);
-        *w++ = rdp_coords(0x30, 0, 0, 7, 255 << 2, 0);        // LOAD_TLUT
-        col_cur_pal = palrow;
-        col_cur_tile = NULL;    // (its texture image is ours to set again)
-    }
-    if (tile != col_cur_tile)
-    {
-        // The tile seen as an image with one row per tile column. The RDP
-        // wants an 8 byte aligned base: the rest goes in the s offset.
-        uintptr_t base = (uintptr_t)tile & ~7;
-        col_off = (uintptr_t)tile - base;
-        *w++ = rdp_image(0x3D, 2 /* CI */, 1 /* 8 bpp */, tile_h, (const void *)base);
-        col_cur_tile = tile;
-        col_cur_col = -1;
-    }
-    if (logw != col_cur_logw)
-    {
-        // 2^logw texels per TMEM row, wrapping like BUILD's shift.
-        *w++ = RDP_SYNC_TILE;
-        *w++ = rdp_set_tile(2 /* CI */, 1 /* 8 bpp */, (1 << logw) >> 3, 0, 0, logw);
-        col_cur_logw = logw;
-        col_cur_col = -1;
-    }
-    if (col_cur_col < 0 || col < col_cur_col || col >= col_cur_col + col_cur_rows)
-    {
-        // Load as many consecutive columns as fit in the 2 KB of TMEM left
-        // by the palette. Past the end of a column the load goes on into the
-        // next one, as BUILD reads it when the height is not a power of two.
-        col_cur_rows = 2048 >> logw;
-        if (col + col_cur_rows > tile_w)
-            col_cur_rows = (tile_w - col > 1) ? tile_w - col : 1;
-        *w++ = RDP_SYNC_LOAD;
-        *w++ = RDP_SYNC_TILE;       // the load rewrites tile 0's size (see above)
-        *w++ = rdp_coords(0x34, col_off << 2, col << 2, 0,
-                          (col_off + (1 << logw) - 1) << 2, (col + col_cur_rows - 1) << 2);
-        col_cur_col = col;
-    }
-
-    // Same texel stepping as vlineasm (texel = vplce >> shift): s in 10.5
-    // fixed point down the column, ds in 5.10.
-    sfx = (col_off << 5) + (int32_t)(vplce >> (shift - 5));
-    ds = vince >> (shift - 10);
-    if (ds > 32767) ds = 32767;
-    if (ds < -32768) ds = -32768;
-    *w++ = rdp_coords(0x25, (sx + 1) << 2, y2 << 2, 0, sx << 2, y1 << 2);
-    *w++ = ((uint64_t)(uint16_t)sfx << 48) | ((uint64_t)(uint16_t)(col << 5) << 32) |
-           ((uint64_t)(uint16_t)ds << 16);
-    col_lw = w;
-    return 1;
-}
-
 void n64_cols_end(void)
 {
     int n;
 
-    cols_on = 0;
-    if (!col_pw)
+    n64_cols.on = 0;
+    if (!n64_cols.pw)
         return;
     PROF_BEGIN(PROF_COLEND);
 
     // rdpq does not know what the textured pass does: it leaves the pipe,
     // the loads and the tiles synced for the commands rdpq sends next.
-    *col_lw++ = RDP_SYNC_PIPE;
-    *col_lw++ = RDP_SYNC_LOAD;
-    *col_lw++ = RDP_SYNC_TILE;
-    data_cache_hit_writeback(col_list, (col_lw - col_list) * sizeof(uint64_t));
+    *n64_cols.lw++ = RDP_SYNC_PIPE;
+    *n64_cols.lw++ = RDP_SYNC_LOAD;
+    *n64_cols.lw++ = RDP_SYNC_TILE;
+    data_cache_hit_writeback(col_list, (n64_cols.lw - col_list) * sizeof(uint64_t));
 
     // The RDP writes the frame: nothing of it may stay in the CPU cache.
     data_cache_hit_writeback_invalidate(framebuffer8, N64_SCREEN_PITCH * N64_SCREEN_H);
 
-    *col_pw++ = RDP_SYNC_PIPE;
-    n = (col_pw - col_punch) * sizeof(uint64_t);
+    *n64_cols.pw++ = RDP_SYNC_PIPE;
+    n = (n64_cols.pw - col_punch) * sizeof(uint64_t);
     data_cache_hit_writeback(col_punch, n);
     rdpq_exec(col_punch, n);
 
@@ -564,6 +444,7 @@ typedef struct {
     int16_t cx1, cy1, cx2, cy2;
     int16_t strip0, nstrips;            // clip rectangles in ovl_strips (0: the box above)
     uint8_t flags;
+    int32_t cmd0, cmd1;                 // N64_OVL_COLUMNS: its commands in ovlc_list
 } ovl_item_t;
 
 static ovl_item_t ovl_items[OVL_MAX_ITEMS];
@@ -603,6 +484,30 @@ static void ovl_clear(void)
     ovl_locked_bytes = 0;
     ovl_count = 0;
     ovl_nstrips = 0;
+    n64_mcols.lw = ovlc_list;
+    ovlc_ntluts = 0;
+}
+
+// Keeps tile (size bytes) locked in BUILD's cache until the RDP has drawn
+// the list. Returns 0 if too many tiles or bytes are locked already.
+static int ovl_lock_tile(const uint8_t *tile, int32_t size, uint8_t *lock)
+{
+    int i;
+
+    for (i = 0; i < ovl_ntiles; i++)
+        if (ovl_tiles[i].data == tile)
+            return 1;
+    if (ovl_ntiles == OVL_MAX_TILES || ovl_locked_bytes + size > OVL_LOCK_BUDGET)
+        return 0;
+    ovl_locked_bytes += size;
+    // Locked (>= 200) so that no tile loaded later evicts it from
+    // BUILD's cache before the RDP draws it.
+    ovl_tiles[i].data = tile;
+    ovl_tiles[i].lock = lock;
+    ovl_tiles[i].saved_lock = *lock;
+    *lock = 255;
+    ovl_ntiles++;
+    return 1;
 }
 
 int n64_overlay_add(float x0, float y0, float scale_x, float scale_y,
@@ -611,7 +516,6 @@ int n64_overlay_add(float x0, float y0, float scale_x, float scale_y,
                     int cx1, int cy1, int cx2, int cy2)
 {
     ovl_item_t *it;
-    int i;
 
     n64_wait_rdp();
     if (ovl_new_frame)
@@ -628,22 +532,8 @@ int n64_overlay_add(float x0, float y0, float scale_x, float scale_y,
     if (ovl_count == OVL_MAX_ITEMS || cx2 <= cx1 || cy2 <= cy1)
         return 0;
 
-    for (i = 0; i < ovl_ntiles; i++)
-        if (ovl_tiles[i].data == tile)
-            break;
-    if (i == ovl_ntiles)
-    {
-        if (ovl_ntiles == OVL_MAX_TILES || ovl_locked_bytes + tile_w * tile_h > OVL_LOCK_BUDGET)
-            return 0;
-        ovl_locked_bytes += tile_w * tile_h;
-        // Locked (>= 200) so that no tile loaded later evicts it from
-        // BUILD's cache before the RDP draws it.
-        ovl_tiles[i].data = tile;
-        ovl_tiles[i].lock = lock;
-        ovl_tiles[i].saved_lock = *lock;
-        *lock = 255;
-        ovl_ntiles++;
-    }
+    if (!ovl_lock_tile(tile, tile_w * tile_h, lock))
+        return 0;
 
     it = &ovl_items[ovl_count++];
     it->x0 = x0; it->y0 = y0; it->scale_x = scale_x; it->scale_y = scale_y;
@@ -652,6 +542,99 @@ int n64_overlay_add(float x0, float y0, float scale_x, float scale_y,
     it->cx1 = cx1; it->cy1 = cy1; it->cx2 = cx2; it->cy2 = cy2;
     it->strip0 = 0; it->nstrips = 0;
     return 1;
+}
+
+// Fills masked palette slot i: the screen palette through its shade table,
+// index 255 transparent.
+static void ovlc_tlut_build(int i)
+{
+    uint16_t *buf = ovlc_tluts + i * 256;
+    const uint8_t *palrow = ovlc_tlut_src[i];
+    int j;
+
+    for (j = 0; j < 255; j++)
+        buf[j] = tlut_cpu[palrow[j]];
+    buf[255] = 0;
+    data_cache_hit_writeback(buf, 256 * sizeof(uint16_t));
+}
+
+const uint16_t *n64_mcols_tlut_for(const uint8_t *palrow)
+{
+    int i, best = 0;
+
+    for (i = 0; i < ovlc_ntluts; i++)
+        if (ovlc_tlut_src[i] == palrow)
+            return ovlc_tluts + i * 256;
+    if (ovlc_ntluts == OVLC_TLUTS)
+    {
+        // All taken (they are read when the frame is presented: none can be
+        // reused): the nearest shade, rows of 256 bytes, of the same table.
+        for (i = 1; i < OVLC_TLUTS; i++)
+            if (labs(ovlc_tlut_src[i] - palrow) < labs(ovlc_tlut_src[best] - palrow))
+                best = i;
+        return ovlc_tluts + best * 256;
+    }
+    i = ovlc_ntluts++;
+    ovlc_tlut_src[i] = palrow;
+    ovlc_tlut_build(i);
+    ovlc_tlut_version = palette_version;
+    return ovlc_tluts + i * 256;
+}
+
+int n64_overlay_columns_begin(int count, const uint8_t *tile, int32_t size, uint8_t *lock)
+{
+    n64_cols_t *c = &n64_mcols;
+    ovl_item_t *it;
+    uint64_t *w;
+
+    n64_wait_rdp();
+    if (ovl_new_frame)
+    {
+        ovl_clear();
+        ovl_new_frame = 0;
+    }
+    if (!video_ready || ovl_count == OVL_MAX_ITEMS ||
+        c->lw + count * N64_COL_WORDS_MAX + 16 > c->list_end || !ovl_lock_tile(tile, size, lock))
+        return 0;
+
+    it = &ovl_items[ovl_count++];
+    memset(it, 0, sizeof(*it));
+    it->flags = N64_OVL_COLUMNS;
+    it->cmd0 = c->lw - ovlc_list;
+
+    // 1 cycle, texture through the palette, the transparent texels (alpha
+    // 0) dropped by the alpha compare against the blend color's alpha.
+    w = c->lw;
+    *w++ = RDP_SYNC_PIPE;
+    *w++ = rdp_coords(0x2D, 0, 0, 0, N64_SCREEN_W << 2, N64_SCREEN_H << 2);     // scissor
+    *w++ = RDP_CMD(0x2F) | SOM_CYCLE_1 | SOM_TLUT_RGBA16 | SOM_SAMPLE_POINT |
+           SOM_TF0_RGB | SOM_TF1_RGB | SOM_RGBDITHER_NONE | SOM_ALPHADITHER_NONE |
+           SOM_ALPHACOMPARE_THRESHOLD | SOM_COVERAGE_DEST_ZAP;
+    *w++ = RDP_CMD(0x3C) | (RDPQ_COMBINER1((0,0,0,TEX0), (0,0,0,TEX0)) & 0x00FFFFFFFFFFFFFFull);
+    *w++ = RDP_CMD(0x39) | 1;           // SET_BLEND_COLOR: alpha threshold 1
+    c->lw = w;
+    c->cur_pal = c->cur_tile = NULL;
+    c->cur_col = c->cur_logw = -1;
+    c->cur_rows = 1;
+    c->off = 0;
+    return 1;
+}
+
+void n64_overlay_columns_end(void)
+{
+    n64_cols_t *c = &n64_mcols;
+    ovl_item_t *it = &ovl_items[ovl_count - 1];
+
+    if (c->lw - ovlc_list == it->cmd0 + 5)
+    {
+        ovl_count--;                    // no column recorded
+        c->lw = ovlc_list + it->cmd0;
+        return;
+    }
+    *c->lw++ = RDP_SYNC_PIPE;
+    *c->lw++ = RDP_SYNC_LOAD;
+    *c->lw++ = RDP_SYNC_TILE;
+    it->cmd1 = c->lw - ovlc_list;
 }
 
 void n64_overlay_flush(const void *data, int bytes)
@@ -737,6 +720,19 @@ static void draw_overlay(void)
     int cur_translucent = -1;
     int i;
 
+    // Masked columns: their commands and palettes as the RDP will read them
+    // (a palette change since they were recorded rebuilds the palettes).
+    if (n64_mcols.lw != ovlc_list)
+    {
+        if (ovlc_tlut_version != palette_version)
+        {
+            for (i = 0; i < ovlc_ntluts; i++)
+                ovlc_tlut_build(i);
+            ovlc_tlut_version = palette_version;
+        }
+        data_cache_hit_writeback(ovlc_list, (n64_mcols.lw - ovlc_list) * sizeof(uint64_t));
+    }
+
     rdpq_set_mode_standard();
     rdpq_mode_tlut(TLUT_RGBA16);
     rdpq_mode_filter(FILTER_POINT);
@@ -746,6 +742,19 @@ static void draw_overlay(void)
     for (i = 0; i < ovl_count; i++)
     {
         const ovl_item_t *it = &ovl_items[i];
+        if (it->flags & N64_OVL_COLUMNS)
+        {
+            // Raw commands: rdpq's mode is set again after them.
+            rdpq_exec(ovlc_list + it->cmd0, (it->cmd1 - it->cmd0) * sizeof(uint64_t));
+            rdpq_set_mode_standard();
+            rdpq_mode_tlut(TLUT_RGBA16);
+            rdpq_mode_filter(FILTER_POINT);
+            rdpq_mode_alphacompare(1);
+            rdpq_set_prim_color(RGBA32(255, 255, 255, 128));
+            cur_translucent = -1;
+            cur_tlut = NULL;
+            continue;
+        }
         const uint16_t *tl;
         int translucent = (it->flags & N64_OVL_TRANSLUCENT) != 0;
         int pitch = (it->tile_h + 7) & ~7;
@@ -1004,6 +1013,42 @@ int n64_video_ready(void)
     return video_ready;
 }
 
+#ifdef N64_SHOTS
+/*
+ * Screenshots for checking the rendering without looking at a screen (make
+ * SHOTS=1, with BENCH): the frame just presented, in the log as hex RGBA5551
+ * pixels, 32 per line ("shot: label w h", then "S y x hex..."); turned into
+ * PNG files by tools/shots.py.
+ */
+static char shot_label[16];
+
+void n64_screenshot(const char *label)
+{
+    strncpy(shot_label, label, sizeof(shot_label) - 1);
+}
+
+static void shot_dump(surface_t *disp)
+{
+    int x, y, k;
+    char line[8 + 32 * 4 + 1];
+
+    rspq_wait();
+    debugf("shot: %s %d %d\n", shot_label, disp->width, disp->height);
+    for (y = 0; y < disp->height; y++)
+    {
+        const uint16_t *row = (const uint16_t *)((const uint8_t *)disp->buffer + y * disp->stride);
+        for (x = 0; x < disp->width; x += 32)
+        {
+            int n = 0;
+            for (k = 0; k < 32 && x + k < disp->width; k++)
+                n += sprintf(line + n, "%04x", row[x + k]);
+            debugf("S %d %d %s\n", y, x, line);
+        }
+    }
+    shot_label[0] = 0;
+}
+#endif
+
 static void present_frame(void)
 {
     n64_wait_rdp();   // the RDP may still be reading the last frame
@@ -1018,13 +1063,13 @@ static void present_frame(void)
 
     PROF_BEGIN(PROF_PRESENT);
     disp = display_get();
-    if (col_lw)
+    if (n64_cols.lw)
         rdpq_attach_clear(disp, NULL);  // (holes without a column show black)
     else
         rdpq_attach(disp, NULL);
     if ((menubg_frame == 1 && menubg) || menubg_frame == 2)
         draw_menubg();
-    if (col_lw || (menubg_frame == 1 && menubg) || menubg_frame == 2)
+    if (n64_cols.lw || (menubg_frame == 1 && menubg) || menubg_frame == 2)
     {
         // Walls and sky first, then the frame on top with the holes
         // transparent. (A palette change since they were recorded, e.g. a
@@ -1037,8 +1082,8 @@ static void present_frame(void)
                 col_tlut_build(i);
             col_tlut_version = palette_version;
         }
-        if (col_lw)
-            rdpq_exec(col_list, (col_lw - col_list) * sizeof(uint64_t));
+        if (n64_cols.lw)
+            rdpq_exec(col_list, (n64_cols.lw - col_list) * sizeof(uint64_t));
         PROF_END(PROF_SKYDRAW);
         rdpq_set_mode_copy(true);
         rdpq_mode_tlut(TLUT_RGBA16);
@@ -1056,6 +1101,10 @@ static void present_frame(void)
     if (ovl_count > 0)
         draw_overlay();
     rdpq_detach_show();
+#ifdef N64_SHOTS
+    if (shot_label[0])
+        shot_dump(disp);
+#endif
 
     // BUILD draws the next frame into the same buffer, but not right away:
     // the game logic runs first. Instead of waiting for the RDP here, the
@@ -1536,11 +1585,16 @@ static uint8_t keys_down[NUM_KEYS];     // what the game currently sees
 // (real sticks rarely report past ~100), as in the N64 Doom port.
 #define STICK_DEADZONE  32
 #define STICK_MAX_RAW   100
-// Turn rate (angvel per tic) at full deflection: a bit above the keyboard's
-// running turn (2 * NORMALTURN = 30), so a hard push turns at least as fast.
-#define STICK_TURN_MAX  40
+// Turn rate (angvel per tic) at full deflection, the N64 Doom port's: there
+// a full push turns 200 * 8 / 65536 of a turn per tic at 35 tics/s, ~307
+// degrees/s. Here a tic turns 2 * angvel / 2048 at 30 tics/s: 29, ~306
+// degrees/s. (40, before, was ~420 degrees/s: too sensitive.)
+#define STICK_TURN_MAX  29
 
-static int stick_x = 0;                 // last polled stick position
+static int stick_x = 0;                 // last polled stick position, from its center
+// Where the stick rests, read at boot as the N64 Doom port does: a stick
+// that is not quite centered would turn the player on its own.
+static int stick_center_x = 0, stick_center_y = 0;
 // Start was pressed in game with R held: until it is released it is the
 // map key, whether R is let go first or not (else it would open the menu).
 static int start_is_map = 0;
@@ -1582,6 +1636,13 @@ int n64_stick_turn(void)
     int range = STICK_MAX_RAW - STICK_DEADZONE;
     int turn;
 
+#ifdef N64_TEST_BENCH
+    // Benchmark builds (make BENCH=seconds): the player turns in place at a
+    // constant rate (getinput doubles it per tic: 16 units, 2048 a turn,
+    // ~4.3 s per turn at 30 tics/s), whatever the controller says.
+    if (!n64_in_menu())
+        return 8;
+#endif
     if (mag <= 0 || n64_in_menu())
         return 0;
     if (mag > range)
@@ -1645,6 +1706,7 @@ void _handle_events(void)
 {
     joypad_inputs_t in;
     uint8_t want[NUM_KEYS] = { 0 };
+    int sx, sy;
     unsigned i;
 
     if (!video_ready)
@@ -1655,7 +1717,10 @@ void _handle_events(void)
 #ifdef N64_INPUT_SCRIPT
     apply_input_script(&in);
 #endif
-    stick_x = in.stick_x;
+    // (From its center, in ints: the int8_t fields could overflow.)
+    sx = in.stick_x - stick_center_x;
+    sy = in.stick_y - stick_center_y;
+    stick_x = sx;
 
     if (in.btn.start && !start_was_down)
         start_is_map = in.btn.r && !n64_in_menu();
@@ -1663,17 +1728,17 @@ void _handle_events(void)
 
     if (n64_in_menu())
     {
-        if (in.stick_y >  STICK_DEADZONE || in.btn.d_up)    set_key(want, SC_UP);
-        if (in.stick_y < -STICK_DEADZONE || in.btn.d_down)  set_key(want, SC_DOWN);
-        if (in.stick_x < -STICK_DEADZONE || in.btn.d_left)  set_key(want, SC_LEFT);
-        if (in.stick_x >  STICK_DEADZONE || in.btn.d_right) set_key(want, SC_RIGHT);
+        if (sy >  STICK_DEADZONE || in.btn.d_up)    set_key(want, SC_UP);
+        if (sy < -STICK_DEADZONE || in.btn.d_down)  set_key(want, SC_DOWN);
+        if (sx < -STICK_DEADZONE || in.btn.d_left)  set_key(want, SC_LEFT);
+        if (sx >  STICK_DEADZONE || in.btn.d_right) set_key(want, SC_RIGHT);
         if (in.btn.a)                    set_key(want, SC_SPACE);
         if (in.btn.b || in.btn.start)    set_key(want, SC_ESCAPE);
     }
     else
     {
-        if (in.stick_y >  STICK_DEADZONE) set_key(want, SC_UP);
-        if (in.stick_y < -STICK_DEADZONE) set_key(want, SC_DOWN);
+        if (sy >  STICK_DEADZONE) set_key(want, SC_UP);
+        if (sy < -STICK_DEADZONE) set_key(want, SC_DOWN);
         if (in.btn.z)       set_key(want, SC_LCTRL);
         if (in.btn.r)       set_key(want, SC_SPACE);
         if (in.btn.a)       set_key(want, SC_A);
@@ -1801,6 +1866,13 @@ void _platform_init(int argc, char  **argv, const char  *title, const char  *ico
     Setup_UnstableNetworking();
 
     joypad_init();
+    {
+        joypad_inputs_t in;
+        joypad_poll();
+        in = joypad_get_inputs(JOYPAD_PORT_1);
+        stick_center_x = in.stick_x;
+        stick_center_y = in.stick_y;
+    }
 }
 
 
