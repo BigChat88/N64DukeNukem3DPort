@@ -27,14 +27,63 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  bundle:
+  # The mips64-elf toolchain ($N64_INST), as a Docker image in this
+  # repository's packages, built from the libdragon submodule's own Dockerfile
+  # and named after its toolchain files: built once per libdragon update (that
+  # takes a while: it compiles GCC), checked for and reused otherwise. (There
+  # is no public libdragon image to pull: ghcr.io/dragonminded/libdragon is
+  # gone, and ghcr.io/n64brew/libdragon is not public.)
+  toolchain:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+
+      - name: Image name
+        id: name
+        run: |
+          KEY="$(git -C libdragon rev-parse HEAD:Dockerfile HEAD:tools/build-toolchain.sh HEAD:tools/build-gdb.sh |
+                 sha256sum | cut -c1-16)"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/n64dukenukem3dport-toolchain:${KEY}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the container registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Already built?
+        id: have
+        run: |
+          if docker manifest inspect "${{ steps.name.outputs.image }}" > /dev/null 2>&1; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push the toolchain image
+        if: steps.have.outputs.built != 'true'
+        run: |
+          docker buildx create --use
+          docker buildx build --push -t "${{ steps.name.outputs.image }}" libdragon
+
+  bundle:
+    needs: toolchain
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     container:
-      # mips64-elf toolchain + $N64_INST, pinned so that the build does not
-      # change under us: ghcr.io/dragonminded/libdragon:latest as of
-      # 2026-10-12 (n64brew/libdragon publishes no image yet). The library
+      # mips64-elf toolchain + $N64_INST (see the toolchain job). The library
       # itself is built from the libdragon submodule.
-      image: ghcr.io/dragonminded/libdragon@sha256:9fe2843c9b7289393c1885be62391140e8b4cdb3edbc715f202dea16f554c5d2
+      image: ${{ needs.toolchain.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     outputs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
