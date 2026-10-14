@@ -87,6 +87,9 @@ marked with `PLATFORM_N64` / `N64`.
   for about a second between the "ENTERING" screen and the level. It also frees the main
   menu's background picture (64 KB, more with an add-on's), loaded again by the next menu:
   kept for the whole game, it left E1L3, reached from the menu, out of memory.
+- `game/gamedef.c` (`compilecons`): when a CON script does not compile, the error screen
+  shows its first error and the file it is in (only the log saw them), and a missing
+  include file no longer gives an empty error screen.
 - `game/game.c` (`coolgaugetext`): the item selector is drawn by the RDP like the weapon,
   after it: with the full status bar (drawn on the CPU) it came out behind the weapon.
 - `game/game.c` (`faketimerhandler`): at most two game tics wait for the next frame; past

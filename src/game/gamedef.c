@@ -40,6 +40,41 @@ static int32_t last_used_size;
 #if PLATFORM_N64
 // The fire button was let go since the player died (ifhitspace).
 static uint8_t n64_fire_released[MAXPLAYERS];
+
+/*
+ * The CON compiler reports its errors with printf, which on the N64 only the
+ * log sees: the error screen said "ERROR in CON(GAME.CON)" and no more. The
+ * first error (and the file it is in: the includes count their own lines)
+ * is kept for the screen.
+ */
+#include <stdarg.h>
+static char n64_con_file[64];       // file being compiled
+static char n64_con_error[160];     // its first error, "FILE: message"
+
+static int n64_con_printf(const char *fmt, ...)
+{
+    char buf[256];
+    va_list ap;
+    int n;
+
+    va_start(ap, fmt);
+    n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (!n64_con_error[0] && strstr(buf, "ERROR"))
+    {
+        const char *msg = buf;
+        size_t len;
+        while (*msg == ' ' || *msg == '*')
+            msg++;
+        snprintf(n64_con_error, sizeof(n64_con_error), "%s: %s", n64_con_file, msg);
+        len = strlen(n64_con_error);
+        if (len > 0 && n64_con_error[len-1] == '\n')
+            n64_con_error[len-1] = 0;
+    }
+    fputs(buf, stdout);
+    return n;
+}
+#define printf n64_con_printf
 #endif
 
 static short g_i,g_p;
@@ -828,13 +863,22 @@ uint8_t  parsecommand(int readfromGRP)
 					printf("  * ERROR!(ln%hd) Could not find '%s'.\n",line_number,label+(labelcnt<<6));
 
 					printf("ERROR: could not open (%s)\n", includedconfile);
+#if PLATFORM_N64
+					gameexit(n64_con_error);    // (an empty message left the error screen blank)
+#else
 					gameexit("");
+#endif
 					return 0;
 				}
 
 				j = kfilelength(fp);
 
 				printf("Including: '%s'.\n", includedconfile);
+#if PLATFORM_N64
+				char n64_parent_file[sizeof(n64_con_file)];
+				memcpy(n64_parent_file, n64_con_file, sizeof(n64_parent_file));
+				snprintf(n64_con_file, sizeof(n64_con_file), "%s", includedconfile);
+#endif
 
 				temp_line_number = line_number;
 				line_number = 1;
@@ -857,6 +901,9 @@ uint8_t  parsecommand(int readfromGRP)
 				total_lines += line_number;
 				line_number = temp_line_number;
 				checking_ifelse = temp_ifelse_check;
+#if PLATFORM_N64
+				memcpy(n64_con_file, n64_parent_file, sizeof(n64_con_file));
+#endif
 
 				return 0;
 			}
@@ -1655,6 +1702,10 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
     else
     {
         printf("Compiling: '%s'.\n",filenam);
+#if PLATFORM_N64
+        snprintf(n64_con_file, sizeof(n64_con_file), "%s", filenam);
+        n64_con_error[0] = 0;
+#endif
 
         fs = kfilelength(fp);
 
@@ -1711,7 +1762,11 @@ void loadefs(char  *filenam, char  *mptr, int readfromGRP)
 
     if(error)
     {
+#if PLATFORM_N64
+		Error(EXIT_SUCCESS, "ERROR in CON(%s)\n%s\n", filenam, n64_con_error);
+#else
 		Error(EXIT_SUCCESS, "ERROR in CON(%s)\n", filenam);
+#endif
     }
     else
     {
