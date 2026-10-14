@@ -93,7 +93,7 @@ $(BUILD_DIR)/$(ROM_NAME).elf: $(OBJS)
 # ---------------------------------------------------------------------------
 # General MIDI soundfont for the music (assets/soundfont, see src/UPSTREAM.md).
 # The game's songs are in the user's GRP: tools/pack_rom.py converts those.
-DEFAULT_SOUNDFONT = assets/soundfont/GeneralUser-GS.sf2
+DEFAULT_SOUNDFONT = assets/soundfont/SC-55-SoundFont-v1.2a1.sf2
 
 $(BUILD_DIR)/media/soundfont.sf64: $(DEFAULT_SOUNDFONT)
 	@mkdir -p $(BUILD_DIR)/sf64

@@ -54,7 +54,7 @@ ENGINE_FILES = (f"{ROM_NAME}.elf.stripped", f"{ROM_NAME}.elf.sym")
 SOUNDFONT_NAME = "soundfont.sf64"
 # The soundfont the engine ships converted; converted here only if missing or
 # replaced with --soundfont.
-DEFAULT_SOUNDFONT = ROOT / "assets" / "soundfont" / "GeneralUser-GS.sf2"
+DEFAULT_SOUNDFONT = ROOT / "assets" / "soundfont" / "SC-55-SoundFont-v1.2a1.sf2"
 # Fallback header settings if the engine folder has no rom.cfg (written by
 # `make engine`, which takes them from the Makefile).
 DEFAULT_ROM_CFG = {"title": "Duke Nukem 3D", "savetype": "flashram",

@@ -627,8 +627,11 @@ static fx_voice_t *alloc_voice(int priority)
 // and any two loud ones together (a shot and an explosion) crackled. Now one
 // peaks at ~0.24 (FX_GAIN, with make_resident's gain making up for FX_PEAK),
 // room for a few at once; the music keeps the same balance against them.
-#define MIX_MASTER 1.0f
-#define FX_GAIN    0.24f
+// The SC-55 soundfont plays 1.4-2.8 times quieter than the previous one: the
+// master is doubled for the music, and FX_GAIN halved, so the effects come
+// out as before.
+#define MIX_MASTER 2.0f
+#define FX_GAIN    0.12f
 
 static void set_volume(fx_voice_t *v, int left, int right)
 {

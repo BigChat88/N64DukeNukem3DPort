@@ -1696,6 +1696,10 @@ if (!VOLUMEONE)
      // screen and before the level's first frame. The next frame is not
      // shown, so the "ENTERING" screen stays until the level is drawn.
      n64_skip_next_frame();
+     // The memory is tight in the levels: the main menu's background picture
+     // (64 KB, kept since the menu was first shown) left E1L3, reached from
+     // the menu, out of memory.
+     n64_menu_background_release();
 #endif
 }
 

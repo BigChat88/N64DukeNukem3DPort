@@ -1929,9 +1929,17 @@ void coolgaugetext(short snum)
     
     p = &ps[snum];
 
-    if (p->invdisptime > 0) 
+    if (p->invdisptime > 0)
     {
+#if PLATFORM_N64
+        // Over the weapon, which the RDP draws over the frame: with the full
+        // status bar (drawn on the CPU) the item selector came out behind it.
+        n64_overlay_capture(1);
+#endif
         displayinventory(p);
+#if PLATFORM_N64
+        n64_overlay_capture(0);
+#endif
     }
 
 

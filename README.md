@@ -3,7 +3,6 @@
 A port of the original Duke Nukem 3D (Build engine) to the N64 with
 [libdragon](https://github.com/n64brew/libdragon) (`preview` branch), based on
 [Chocolate Duke3D](https://github.com/fabiensanglard/chocolate_duke3D).
-See [src/UPSTREAM.md](src/UPSTREAM.md) for where the code comes from and its licenses.
 
 **Requires the Expansion Pak (8 MB).**
 
@@ -83,10 +82,6 @@ built with `tools/vendor/bin/build-tools.sh` (see
   besides `DEFS.CON`/`USER.CON`. If it guesses wrong: `--con NAME.CON`.
 - The compiled game is the same for every ROM: an expansion's ROM carries its GRP in
   `rom:/addon/` and its name in `rom:/addon/ADDON.TXT`, which the game reads at boot.
-- Main menu background: `assets/addons/<folder>.png` (320×200, 256 colors), made from
-  any 4:3 image with `python tools/menubg.py image.jpg assets/addons/<folder>.png`
-  (needs Pillow). Nuclear Winter, Life's A Beach and D.C. already have one. Without an
-  image, the menu uses the game's title screen, like the base game.
 
 ## Building from source
 
@@ -113,9 +108,7 @@ libdragon make engine                   # only the compiled game + media: build/
 ```
 
 `make` compiles the game (`make engine`) and then calls `tools/pack_rom.py`, the same
-packer as the Release. The project version is in `VERSION`: every push to `main`
-publishes (or updates) the `v<VERSION>` Release, moving its tag to that commit so that the
-tag, the code and the binaries always match. Pull requests only build and test.
+packer as the Release.
 
 ## Controls
 

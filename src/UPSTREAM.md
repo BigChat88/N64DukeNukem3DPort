@@ -17,8 +17,9 @@ marked with `PLATFORM_N64` / `N64`.
 - The game data (`DUKE3D.GRP`) is **not** free and is not included.
 - "powered by libdragon" intro (`src/n64/n64_intro.c`, `assets/intro/*.png`): MIT,
   N64brew-GameJam2024 via lambertjamesd/n64brew2025, ported from the N64 Doom port.
-- SoundFont `assets/soundfont/GeneralUser-GS.sf2` (S. Christian Collins): free use and
-  redistribution, see `assets/soundfont/LICENSE.txt`.
+- SoundFont `assets/soundfont/SC-55-SoundFont-v1.2a1.sf2`: samples of the Roland SC-55
+  Sound Canvas (its own notice: "Roland Corporation (C) 1991"), fixed by Triaxis. It comes
+  with no license; see `assets/soundfont/README.md`.
 
 ## Original files not compiled on the N64
 
@@ -83,7 +84,11 @@ marked with `PLATFORM_N64` / `N64`.
   tick (13 ms per frame on D.C.'s E3L4).
 - `game/premap.c` (`enterlevel`): the frame after a level is entered is not shown. The menus
   start a game from inside `menus()` and go on drawing themselves: the skill menu came back
-  for about a second between the "ENTERING" screen and the level.
+  for about a second between the "ENTERING" screen and the level. It also frees the main
+  menu's background picture (64 KB, more with an add-on's), loaded again by the next menu:
+  kept for the whole game, it left E1L3, reached from the menu, out of memory.
+- `game/game.c` (`coolgaugetext`): the item selector is drawn by the RDP like the weapon,
+  after it: with the full status bar (drawn on the CPU) it came out behind the weapon.
 - `game/game.c` (`faketimerhandler`): at most two game tics wait for the next frame; past
   that the game slows down (below ~15 fps) instead of running more tics in each slow frame.
 - `game/premap.c`: the map shows what the player has seen (Build's `automapping`), not only

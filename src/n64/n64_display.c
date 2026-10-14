@@ -960,6 +960,22 @@ int n64_menu_background_tile(const uint8_t *tile, int w, int h, const uint8_t *p
     return 1;
 }
 
+void n64_menu_background_release(void)
+{
+    n64_wait_rdp();   // the RDP may still be reading them
+    menubg_frame = 0;
+    free(menubg_pixels);
+    menubg_pixels = NULL;
+    if (menubg_tlut)
+        free_uncached(menubg_tlut);
+    menubg_tlut = NULL;
+    menubg_tile_src = NULL;
+    if (menubg)
+        sprite_free(menubg);
+    menubg = NULL;
+    menubg_state = 0;   // (loaded again by the next menu)
+}
+
 static void draw_menubg(void)
 {
     uint8_t f = (uint8_t)(menubg_fade * 255.0f);

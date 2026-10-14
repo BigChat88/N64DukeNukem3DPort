@@ -56,10 +56,12 @@
 #define USER_DUMMY_NETWORK 1
 
 // Size of BUILD's tile cache. Tiles are streamed from ROM on demand, so this
-// only needs to hold the art used by the current level. 2 MB leaves room for
-// the music soundfont (~1.25 MB of sample headers, see n64_music.c) with
-// ~800 KB of heap to spare.
-#define N64_TILE_CACHE_SIZE (2 * 1024 * 1024)
+// only needs to hold the art used by the current level (and the sounds). With
+// 2 MB and the previous music soundfont (1.25 MB of RAM, the current one takes
+// ~400 KB), the heap left in the levels was down to 60-130 KB: an episode
+// ending, the menu and a new episode ran out of memory. 1.75 MB measured the
+// same as 2 MB (the tiles reloaded from ROM did not grow).
+#define N64_TILE_CACHE_SIZE (1792 * 1024)
 
 // All game data lives in the DragonFS image appended to the ROM.
 #define N64_DATA_PREFIX "rom:/"
@@ -84,6 +86,9 @@ void n64_log_memory(const char *label);
 // and a palette change does not show it either: the screen keeps the last
 // frame shown (see enterlevel).
 void n64_skip_next_frame(void);
+// Frees the main menu's background picture (64 KB, more with an add-on's),
+// loaded again when the menu is shown again: the levels need the memory.
+void n64_menu_background_release(void);
 // Shows a fatal error on screen and halts.
 void n64_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 
