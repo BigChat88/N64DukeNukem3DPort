@@ -291,7 +291,7 @@ uint8_t  loadsound(uint16_t num)
 
 #ifdef N64
     // Big sounds (Caribbean's ambient music, up to 3 MB) do not fit in the
-    // 2 MB cache next to everything else: they play straight from ROM. Not
+    // 1.75 MB cache next to everything else: they play straight from ROM. Not
     // the smaller ones: the mixer can only take ~60 samples of a streamed
     // 8-bit sound per round, and splits its work into as many rounds for
     // every channel. Life's A Beach's ambient loops (surf, boat engine, drums,

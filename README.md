@@ -34,9 +34,9 @@ Copy the original files into [`gamedata/`](gamedata/README.md):
 
 | Expansion | Folder | What to put in it | Episode | ROM |
 |---|---|---|---|---|
-| Nuclear Winter | `gamedata/nwinter/` | `NWINTER.GRP` | 2 | 52 MB |
-| Life's A Beach | `gamedata/vacation/` | `VACATION.GRP` + its loose `GAME.CON`, `USER.CON`, `DEFS.CON` | 3 | 56 MB |
-| Duke It Out In D.C. | `gamedata/dukedc/` | `DUKEDCPP.SSI` (version 1.4/1.5, from the CD) | 3 | 52 MB |
+| Nuclear Winter | `gamedata/nwinter/` | `NWINTER.GRP` | 2 | 43 MB |
+| Life's A Beach | `gamedata/vacation/` | `VACATION.GRP` + its loose `GAME.CON`, `USER.CON`, `DEFS.CON` | 3 | 47 MB |
+| Duke It Out In D.C. | `gamedata/dukedc/` | `DUKEDCPP.SSI` (version 1.4/1.5, from the CD) | 3 | 43 MB |
 
 A folder can also hold the expansion's loose files or a single `.zip`.
 If it comes as a CD image (`.bin`/`.iso`), `python tools/cd_extract.py image.bin
@@ -76,7 +76,7 @@ built with `tools/vendor/bin/build-tools.sh` (see
   `definelevelname`); if there is only one, the menu goes straight to the skill choice.
 - What is not used is removed from the base GRP (`tools/addon_base.py`): the files the
   expansion replaces, the maps and animations of the other episodes, the demos, and the
-  base CONs if the expansion brings its own. Nuclear Winter: 52 MB instead of 75.
+  base CONs if the expansion brings its own. Nuclear Winter: 43 MB instead of 66.
 - The CON script is picked automatically: `GAME.CON` if the expansion has one, otherwise
   the one named like the GRP (`NWINTER.CON` in `NWINTER.GRP`), otherwise its only `.CON`
   besides `DEFS.CON`/`USER.CON`. If it guesses wrong: `--con NAME.CON`.

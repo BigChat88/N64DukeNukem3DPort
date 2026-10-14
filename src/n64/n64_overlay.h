@@ -28,6 +28,9 @@
 // weapon, the crosshair and the menus.
 void n64_overlay_capture(int on);
 int n64_overlay_capturing(void);
+// What the overlay can still take this frame: masked column commands, tile
+// bytes to lock, items, tiles, clipping strips (see drawmasks).
+void n64_overlay_room(int32_t *col_words, int32_t *lock_bytes, int *items, int *ntiles, int *strips);
 
 // Records one sprite: the tile (column-major, tile_w columns of tile_h
 // texels) drawn with its top-left corner at (x0, y0) and scale_x / scale_y

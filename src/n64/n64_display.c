@@ -86,7 +86,7 @@ static void rdp_done_callback(void *arg)
 #define COL_MAX_TILES   192             // tiles per frame
 #define COL_MAX_TLUTS   64              // shade tables per frame
 #define COL_LIST_WORDS  16384           // raw RDP commands of the textured pass
-// Most bytes of BUILD's 2 MB tile cache the walls of a frame keep locked for
+// Most bytes of BUILD's tile cache (1.75 MB) the walls of a frame keep locked for
 // the RDP (the overlay has its own budget, OVL_LOCK_BUDGET): past it a wall
 // is drawn on the CPU, instead of risking a cache all locked up.
 #define COL_LOCK_BUDGET (768 * 1024)
@@ -110,7 +110,7 @@ n64_cols_t n64_cols;                    // the recorder's state (n64_columns.h)
 // Masked columns of the overlay (wall sprites, n64_overlay_columns_begin):
 // raw RDP commands like the walls', with their own palettes (index 255
 // transparent).
-#define OVLC_WORDS      4096            // commands of a frame
+#define OVLC_WORDS      12288           // commands of a frame (two full-screen masked walls)
 #define OVLC_TLUTS      32              // palettes of a frame
 static uint64_t *ovlc_list = NULL;
 static uint16_t *ovlc_tluts = NULL;
@@ -493,6 +493,32 @@ static void ovl_clear(void)
     ovl_nstrips = 0;
     n64_mcols.lw = ovlc_list;
     ovlc_ntluts = 0;
+}
+
+// What the overlay can still take this frame (all of it if the list belongs
+// to the frame on screen: the next sprite recorded clears it): masked column
+// commands, bytes of tiles to lock, items, tiles and clipping strips.
+// drawmasks plans with it,
+// so that nothing it sends to the RDP gets refused and drawn on the CPU,
+// under what the RDP draws over the frame.
+void n64_overlay_room(int32_t *col_words, int32_t *lock_bytes, int *items, int *ntiles, int *strips)
+{
+    if (ovl_new_frame)
+    {
+        *col_words = n64_mcols.list_end - ovlc_list;
+        *lock_bytes = OVL_LOCK_BUDGET;
+        *items = OVL_MAX_ITEMS;
+        *ntiles = OVL_MAX_TILES;
+        *strips = OVL_MAX_STRIPS;
+    }
+    else
+    {
+        *col_words = n64_mcols.list_end - n64_mcols.lw;
+        *lock_bytes = OVL_LOCK_BUDGET - ovl_locked_bytes;
+        *items = OVL_MAX_ITEMS - ovl_count;
+        *ntiles = OVL_MAX_TILES - ovl_ntiles;
+        *strips = OVL_MAX_STRIPS - ovl_nstrips;
+    }
 }
 
 // Keeps tile (size bytes) locked in BUILD's cache until the RDP has drawn

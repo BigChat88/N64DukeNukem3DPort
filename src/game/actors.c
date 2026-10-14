@@ -646,14 +646,14 @@ static int n64_move_snowflake(short spritenum, int32_t xchange, int32_t ychange,
     int32_t daz;
     short sect = s->sectnum;
 
-    if (!inside(x, y, sect))
+    if (inside(x, y, sect) != 1)
     {
         walltype *wal = &wall[sector[sect].wallptr];
         int i;
 
         sect = -1;
         for (i = sector[s->sectnum].wallnum; i > 0; i--, wal++)
-            if (wal->nextsector >= 0 && !(wal->cstat&1) && inside(x, y, wal->nextsector))
+            if (wal->nextsector >= 0 && !(wal->cstat&1) && inside(x, y, wal->nextsector) == 1)
             {
                 sect = wal->nextsector;
                 break;

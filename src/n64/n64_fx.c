@@ -52,7 +52,7 @@ typedef struct {
 
 /*
  * Sounds too big for BUILD's cache (Caribbean has ambient music loops of
- * 600 KB to 3 MB, the cache is 2 MB) are played straight from ROM: the game
+ * 600 KB to 3 MB, the cache is 1.75 MB) are played straight from ROM: the game
  * gets a small descriptor instead of the loaded file (n64_fx_stream_sound)
  * and the samples are read by PI DMA as they play.
  */

@@ -4077,8 +4077,6 @@ static int clippoly4(int32_t cx1, int32_t cy1, int32_t cx2, int32_t cy2)
 int n64_world_overlay = 0;
 // drawsprite(): the sprite being drawn goes to the RDP overlay.
 static int n64_sprite_rdp = 0;
-// drawmasks(): per sorted sprite, whether the RDP may draw it.
-static uint8_t n64_sprite_ok[MAXSPRITESONSCREEN];
 
 /*
  * Screen columns a sprite may cover, bounded by a circle around its
@@ -6486,6 +6484,8 @@ static void n64_drawmasks_ordered(void)
     n64_maskop_t *op;
     int32_t i, j, k, gap, nops = 0, l, r, x;
     int overlay = n64_world_overlay && frameplace == (uint8_t *)n64_screen_buffer();
+    int32_t room_words = 0, room_lock = 0, op_bytes = 0;
+    int room_items = 0, room_tiles = 0, room_strips = 0, op_strips = 0;
 
 #define N64_OP_SPRITE(n) (op = &n64_maskops[nops++], op->tspr = tspriteptr[n], \
                           op->sx = spritesx[n], op->sy = spritesy[n])
@@ -6551,12 +6551,28 @@ static void n64_drawmasks_ordered(void)
 #undef N64_OP_SPRITE
 #undef N64_OP_WALL
 
-    // Which ones the RDP may draw: from the nearest (drawn last).
+    // Which ones the RDP may draw: from the nearest (drawn last). Each takes
+    // room in the overlay (an item, its tile locked, the column commands of
+    // a wall sprite or masked wall at their most, the clipping strips of a
+    // face sprite, never more than its columns): one that does not fit
+    // anymore is drawn on the CPU, and so is what is behind it in its columns.
+    // (Refused while drawing instead, it came out under what the RDP drew
+    // from farther away: D.C.'s helicopter over the fence in front of it.)
     if (overlay)
+    {
         memset(cpu_cols, 0, xdimen);
+        n64_overlay_room(&room_words, &room_lock, &room_items, &room_tiles, &room_strips);
+        // (Some left for what is recorded after the view: weapon, HUD, menus.)
+        room_lock -= 64 * 1024;
+        room_items -= 64;
+        room_tiles -= 8;
+        room_strips -= 64;
+    }
     for (i = nops-1; i >= 0; i--)
     {
         int ok;
+        int32_t words = 0;
+        short pic;
 
         op = &n64_maskops[i];
         op->rdp = 0;
@@ -6571,6 +6587,9 @@ static void n64_drawmasks_ordered(void)
             }
             // Face sprites, and opaque wall sprites the RDP can load.
             ok = (op->tspr->cstat&48) == 0 || n64_wall_sprite_rdp_ok(op->tspr);
+            pic = op->tspr->picnum;
+            if ((op->tspr->cstat&48) == 16)
+                words = 1;
         }
         else
         {
@@ -6578,6 +6597,33 @@ static void n64_drawmasks_ordered(void)
             l = max(pvWalls[j].screenSpaceCoo[0][VEC_COL], 0);
             r = min(pvWalls[j].screenSpaceCoo[1][VEC_COL], xdimen-1);
             ok = n64_maskwall_rdp_ok(j);
+            pic = wall[pvWalls[j].worldWallId].overpicnum;
+            words = 1;
+        }
+        if (ok && l <= r)
+        {
+            int32_t bytes;
+            if ((uint32_t)pic >= (uint32_t)MAXTILES)
+                pic = 0;
+            if (tiles[pic].animFlags&192)
+                pic += animateoffs(pic);
+            bytes = tiles[pic].dim.width * tiles[pic].dim.height;
+            if (words)
+                words = (r-l+1) * N64_COL_WORDS_MAX + 16;
+            op_strips = words ? 0 : min(r-l+1, N64_OVL_MAX_STRIPS);
+            if (words > room_words || bytes > room_lock || room_items < 1 || room_tiles < 1 ||
+                op_strips > room_strips)
+                ok = 0;
+            else
+            {
+                // (Taken only if it goes to the RDP: undone below if not.)
+                room_words -= words;
+                room_lock -= bytes;
+                room_items--;
+                room_tiles--;
+                room_strips -= op_strips;
+                op_bytes = bytes;
+            }
         }
         if (l > r)
         {
@@ -6594,6 +6640,11 @@ static void n64_drawmasks_ordered(void)
                 op->rdp = 1;
                 continue;
             }
+            room_words += words;    // (on the CPU after all)
+            room_lock += op_bytes;
+            room_items++;
+            room_tiles++;
+            room_strips += op_strips;
         }
         memset(&cpu_cols[l], 1, r-l+1);
     }
