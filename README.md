@@ -7,7 +7,7 @@ A port of the original Duke Nukem 3D (Build engine) to the N64 with
 **Requires the Expansion Pak (8 MB).**
 
 No copyrighted game data is in this repository: you provide your own copy of
-Duke Nukem 3D: Atomic Edition (and its expansions), and the packer turns it into ROMs.
+Duke Nukem 3D 1.4 or 1.5 (and its expansions), and the packer turns it into ROMs.
 
 ## What you need to play
 
@@ -28,11 +28,14 @@ Duke Nukem 3D: Atomic Edition (and its expansions), and the packer turns it into
 
 Copy the original files into [`gamedata/`](gamedata/README.md):
 
-* `DUKE3D.GRP` and, if you have it, `DUKE.RTS`, of the **Atomic Edition (1.4/1.5)**, the
-  only version supported (also called the Plutonium Pak). A `.zip` of your installation
-  that contains them works too. The packer refuses an older `DUKE3D.GRP` (1.3D or
-  shareware): the expansions' scripts need what the Atomic Edition added, and over an
-  older base game they stopped at boot.
+* `DUKE3D.GRP` and, if you have it, `DUKE.RTS`, from **Duke Nukem 3D version 1.4 or 1.5**,
+  the ones with episode 4 ("The Birth"):
+  * 1.4: the original game updated with the Plutonium PAK;
+  * 1.5: the Atomic Edition, which already includes it.
+
+  A `.zip` of your installation that contains them works too. Older versions (1.3D and
+  the shareware) are not supported: the packer refuses them, since the expansions'
+  scripts need what 1.4 added.
 * Each expansion in its own folder inside `gamedata/`:
 
 | Expansion | Folder | What to put in it | Episode | ROM |
@@ -41,9 +44,9 @@ Copy the original files into [`gamedata/`](gamedata/README.md):
 | Life's A Beach | `gamedata/vacation/` | `VACATION.GRP` + its loose `GAME.CON`, `USER.CON`, `DEFS.CON` | 3 | 47 MB |
 | Duke It Out In D.C. | `gamedata/dukedc/` | `DUKEDCPP.SSI` (version 1.4/1.5, from the CD) | 3 | 43 MB |
 
-A folder can also hold the expansion's loose files or a single `.zip`.
-If it comes as a CD image (`.bin`/`.iso`), `python tools/cd_extract.py image.bin
-gamedata/<name>` extracts its files. Details in [gamedata/README.md](gamedata/README.md).
+A folder can also hold the expansion's loose files, a single `.zip`, or its CD image
+(`.bin`/`.cue` or `.iso`), which the packer extracts by itself. Details in
+[gamedata/README.md](gamedata/README.md).
 
 ## How to build the ROMs
 

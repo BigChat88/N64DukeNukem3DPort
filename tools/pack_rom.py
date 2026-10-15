@@ -17,14 +17,14 @@ which is also searched).
 
 Game data (see gamedata/README.md):
 
-    gamedata/DUKE3D.GRP          base game: Atomic Edition 1.4/1.5
+    gamedata/DUKE3D.GRP          base game: version 1.4 or 1.5
     gamedata/DUKE.RTS            optional (Remote Ridicule)
     gamedata/<name>/             one folder per expansion -> duke3d-<name>.z64
 
 Instead of DUKE3D.GRP, gamedata/ may hold a .zip with it inside. An expansion
 folder holds its GRP, its Sunstorm .SSI installer, its loose files, or a
-single .zip of any of them. Folders whose name starts with '_' are skipped.
-Only the Atomic Edition (1.4/1.5) of the game is supported, for the base game
+single .zip of any of them, or its CD image (.bin/.cue or .iso). Folders whose name starts with '_' are skipped.
+Only version 1.4 (Plutonium PAK) or 1.5 (Atomic Edition) is supported, for the base game
 and as the base of the expansions.
 
 Requires the libdragon host tools (mkdfs, n64tool, ed64romconfig and
@@ -80,7 +80,10 @@ def die(msg: str):
 
 def run(cmd: list, **kw) -> None:
     log("  $ " + " ".join(str(c) for c in cmd))
-    subprocess.run([str(c) for c in cmd], check=True, **kw)
+    try:
+        subprocess.run([str(c) for c in cmd], check=True, **kw)
+    except subprocess.CalledProcessError:
+        die(f"{Path(str(cmd[1] if str(cmd[0]) == sys.executable else cmd[0])).name} failed: see its message above")
 
 
 def run_tool(script: str, *args) -> None:
@@ -163,13 +166,13 @@ def find_file(folder: Path, name: str) -> Path | None:
 
 
 def check_atomic(grp: Path) -> None:
-    """Only the Atomic Edition (1.4/1.5) is supported, the one the expansions
-    are made for: their scripts use what its DEFS.CON adds, and over an older
-    base game they stopped at boot ("Parameter ... is undefined"). Only it has
+    """Only versions 1.4 and 1.5 are supported, the ones the expansions are
+    made for: their scripts use what its DEFS.CON adds, and over an older base
+    game they stopped at boot ("Parameter ... is undefined"). Only they have
     episode 4."""
     if "E4L1.MAP" not in grp_names(grp.read_bytes()):
         die(f"{BASE_GRP} (from gamedata/) is an older version of Duke Nukem 3D (1.3D or shareware:\n"
-            "  it has no episode 4). Only the Atomic Edition (1.4/1.5, the Plutonium Pak)\n"
+            "  it has no episode 4). Only version 1.4 (Plutonium PAK) or 1.5 (Atomic Edition)\n"
             "  is supported: copy its DUKE3D.GRP into gamedata/. See gamedata/README.md")
 
 
@@ -197,7 +200,7 @@ def stage_base(gamedata: Path, dest: Path) -> None:
             return
     die(
         f"{gamedata}: no {BASE_GRP} found.\n"
-        "  copy the DUKE3D.GRP of your own copy of the Atomic Edition (1.4/1.5)\n"
+        "  copy the DUKE3D.GRP of your own copy of the game, version 1.4 or 1.5,\n"
         "  into gamedata/, or a .zip that has it.\n"
         "  See gamedata/README.md"
     )
@@ -225,10 +228,18 @@ def addon_name(src: Path) -> str:
     return name
 
 
-def addon_source(src: Path) -> Path:
-    """What grp_pack.py gets: a folder holding just one GRP, SSI or zip is that file."""
+def addon_source(src: Path, work: Path) -> Path:
+    """What grp_pack.py gets: a folder holding just one GRP, SSI or zip is that
+    file; one holding a CD image (.bin of a .cue, or .iso) is the image's files,
+    extracted into work."""
     if src.is_dir():
         files = [p for p in src.iterdir() if p.is_file()]
+        images = [p for p in files if p.suffix.lower() in (".bin", ".iso")]
+        if images and not any(p.suffix.lower() in (".grp", ".ssi") for p in files):
+            cd = work / "cd"
+            for image in images:
+                run_tool("cd_extract.py", image, cd)
+            return cd
         if len(files) == 1 and files[0].suffix.lower() in (".grp", ".ssi", ".zip"):
             return files[0]
     return src
@@ -287,7 +298,7 @@ def build_rom(addon: Path | None, con: str | None, gamedata: Path, work: Path, o
         # the base GRP is trimmed to what the add-on's episodes use.
         addon_grp = fs / "addon" / f"{name}.GRP"
         addon_grp.parent.mkdir()
-        run_tool("grp_pack.py", addon_source(addon), addon_grp)
+        run_tool("grp_pack.py", addon_source(addon, tw), addon_grp)
         full = tw / BASE_GRP
         shutil.move(str(fs / BASE_GRP), full)
         run_tool("addon_base.py", full, addon_grp, fs / BASE_GRP)

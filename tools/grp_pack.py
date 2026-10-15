@@ -95,6 +95,16 @@ def collect(entries):
         else:
             loose.append((base.upper(), read))
 
+    # A Sunstorm CD holds an installer for each version of the game: DUKEDC13.SSI
+    # for 1.3D and DUKEDCPP.SSI for the Plutonium PAK (1.4/1.5), the one this
+    # port uses. Unpacking both mixed in files of the 1.3D one.
+    names = {b.upper() for b, _ in grps}
+    for base, _ in list(grps):
+        b = base.upper()
+        if b.endswith('13.SSI') and b[:-6] + 'PP.SSI' in names:
+            print(f'  {base}: left out (for Duke 1.3D; {b[:-6]}PP.SSI is for 1.4/1.5)')
+            grps = [g for g in grps if g[0] != base]
+
     files = {}
     for base, read in sorted(grps):
         print(f'  {base}: unpacked')
