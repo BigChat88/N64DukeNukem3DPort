@@ -29,6 +29,7 @@ import zipfile
 SKIP_EXTENSIONS = {
     '.exe', '.com', '.bat', '.dll', '.pif', '.ico', '.ini', '.cfg', '.txt',
     '.doc', '.diz', '.nfo', '.htm', '.html', '.pdf', '.dat', '.pck', '.lnk',
+    '.bin', '.cue', '.iso',
 }
 
 

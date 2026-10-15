@@ -23,7 +23,7 @@ Game data (see gamedata/README.md):
 
 Instead of DUKE3D.GRP, gamedata/ may hold a .zip with it inside. An expansion
 folder holds its GRP, its Sunstorm .SSI installer, its loose files, or a
-single .zip of any of them, or its CD image (.bin/.cue or .iso). Folders whose name starts with '_' are skipped.
+single .zip of any of them, or its CD image (.bin/.cue or .iso, also zipped). Folders whose name starts with '_' are skipped.
 Only version 1.4 (Plutonium PAK) or 1.5 (Atomic Edition) is supported, for the base game
 and as the base of the expansions.
 
@@ -228,20 +228,76 @@ def addon_name(src: Path) -> str:
     return name
 
 
+CD_IMAGE = (".bin", ".cue", ".iso")
+
+
+def cd_images(files: list, work: Path) -> list:
+    """The data tracks of the CD images among files: each .iso, and each .bin
+    but those a .cue lists as audio tracks only. A zip holding an image is
+    unpacked into work first."""
+    found = []
+    for p in files:
+        if p.suffix.lower() == ".zip":
+            with zipfile.ZipFile(p) as z:
+                for i in z.infolist():
+                    base = i.filename.rsplit("/", 1)[-1]
+                    if Path(base).suffix.lower() in CD_IMAGE:
+                        (work / "image").mkdir(parents=True, exist_ok=True)
+                        with z.open(i) as fin, open(work / "image" / base, "wb") as fout:
+                            shutil.copyfileobj(fin, fout)
+                        found.append(work / "image" / base)
+        elif p.suffix.lower() in CD_IMAGE:
+            found.append(p)
+    audio = set()
+    for cue in (p for p in found if p.suffix.lower() == ".cue"):
+        tracks = {}
+        current = None
+        for line in cue.read_text(encoding="latin-1").splitlines():
+            words = line.split()
+            if words[:1] == ["FILE"]:
+                m = re.match(r'\s*FILE\s+"?(.+?)"?\s+\w+\s*$', line)
+                current = (m.group(1) if m else words[1]).upper()
+                tracks.setdefault(current, set())
+            elif words[:1] == ["TRACK"] and current and len(words) > 2:
+                tracks[current].add(words[2].upper())
+        audio |= {f for f, modes in tracks.items() if modes and modes <= {"AUDIO"}}
+    return [p for p in found if p.suffix.lower() in (".bin", ".iso") and p.name.upper() not in audio]
+
+
+def cd_addon(images: list, work: Path) -> Path:
+    """Extracts the CD images into work and keeps the expansion's files: those
+    of the folders with an SSI installer or a GRP other than DUKE3D.GRP. A
+    folder with a DUKE3D.GRP is a copy of the base game (compilation CDs carry
+    one) and is left out, as is everything else on the CD (programs, extras)."""
+    cd = work / "cd"
+    for image in images:
+        run_tool("cd_extract.py", image, cd)
+    files = [p for p in cd.rglob("*") if p.is_file()]
+    base_dirs = {p.parent for p in files if p.name.upper() == BASE_GRP}
+    data_dirs = sorted({p.parent for p in files
+                        if p.suffix.lower() in (".grp", ".ssi") and p.parent not in base_dirs})
+    if not data_dirs:
+        die(f"{images[0]}: no expansion found on the CD image (no SSI installer or GRP\n"
+            "  other than DUKE3D.GRP): copy the expansion's files into its folder.\n"
+            "  See gamedata/README.md")
+    for p in files:
+        if p.parent not in data_dirs:
+            p.unlink()
+    log("cd image : " + ", ".join(str(d.relative_to(cd)).replace("\\", "/") + "/" for d in data_dirs))
+    return cd
+
+
 def addon_source(src: Path, work: Path) -> Path:
     """What grp_pack.py gets: a folder holding just one GRP, SSI or zip is that
-    file; one holding a CD image (.bin of a .cue, or .iso) is the image's files,
-    extracted into work."""
-    if src.is_dir():
-        files = [p for p in src.iterdir() if p.is_file()]
-        images = [p for p in files if p.suffix.lower() in (".bin", ".iso")]
-        if images and not any(p.suffix.lower() in (".grp", ".ssi") for p in files):
-            cd = work / "cd"
-            for image in images:
-                run_tool("cd_extract.py", image, cd)
-            return cd
-        if len(files) == 1 and files[0].suffix.lower() in (".grp", ".ssi", ".zip"):
-            return files[0]
+    file; a CD image (.bin/.cue or .iso, also in a zip), alone or in a folder
+    without a GRP or SSI, is the expansion's files on it, extracted into work."""
+    files = [p for p in src.iterdir() if p.is_file()] if src.is_dir() else [src]
+    if not any(p.suffix.lower() in (".grp", ".ssi") for p in files):
+        images = cd_images(files, work)
+        if images:
+            return cd_addon(images, work)
+    if src.is_dir() and len(files) == 1 and files[0].suffix.lower() in (".grp", ".ssi", ".zip"):
+        return files[0]
     return src
 
 

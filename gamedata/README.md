@@ -29,6 +29,11 @@ gamedata/
   episode 4).
 - Folders whose name starts with `_`, or that have their own `DUKE3D.GRP`, are skipped
   (useful for keeping other versions).
-- An expansion folder can also hold its CD image (`.bin` with its `.cue`, or `.iso`): the
-  packer extracts it by itself. A Sunstorm CD brings an installer for each version of the
-  game (`DUKEDC13.SSI` for 1.3D, `DUKEDCPP.SSI` for 1.4/1.5); only the second one is used.
+- Instead of its files, an expansion folder can hold its CD image (`.bin` with its `.cue`,
+  or `.iso`), also inside a `.zip`: the packer extracts it by itself and takes the folders
+  of the CD that have the expansion's GRP or `.SSI` installer (a folder with a
+  `DUKE3D.GRP` is a copy of the base game and is left out, as are the CD's programs and
+  extras; the audio tracks of a `.cue` are ignored). A Sunstorm CD brings an installer for
+  each version of the game (`DUKEDC13.SSI` for 1.3D, `DUKEDCPP.SSI` for 1.4/1.5); only the
+  second one is used. A CD with no expansion on it (a compilation of the base game) is
+  refused.

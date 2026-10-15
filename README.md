@@ -45,7 +45,8 @@ Copy the original files into [`gamedata/`](gamedata/README.md):
 | Duke It Out In D.C. | `gamedata/dukedc/` | `DUKEDCPP.SSI` (version 1.4/1.5, from the CD) | 3 | 43 MB |
 
 A folder can also hold the expansion's loose files, a single `.zip`, or its CD image
-(`.bin`/`.cue` or `.iso`), which the packer extracts by itself. Details in
+(`.bin`/`.cue` or `.iso`, also zipped), from which the packer takes the expansion by
+itself. Details in
 [gamedata/README.md](gamedata/README.md).
 
 ## How to build the ROMs
