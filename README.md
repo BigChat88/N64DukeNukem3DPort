@@ -7,7 +7,7 @@ A port of the original Duke Nukem 3D (Build engine) to the N64 with
 **Requires the Expansion Pak (8 MB).**
 
 No copyrighted game data is in this repository: you provide your own copy of
-Duke Nukem 3D (and its expansions), and the packer turns it into ROMs.
+Duke Nukem 3D: Atomic Edition (and its expansions), and the packer turns it into ROMs.
 
 ## What you need to play
 
@@ -28,9 +28,12 @@ Duke Nukem 3D (and its expansions), and the packer turns it into ROMs.
 
 Copy the original files into [`gamedata/`](gamedata/README.md):
 
-* `DUKE3D.GRP` (shareware 1.3D or Atomic Edition 1.4/1.5) and, if you have it, `DUKE.RTS`.
-  A `.zip` of your installation that contains them works too.
-* Each expansion in its own folder inside `gamedata/` (they need the Atomic Edition):
+* `DUKE3D.GRP` and, if you have it, `DUKE.RTS`, of the **Atomic Edition (1.4/1.5)**, the
+  only version supported (also called the Plutonium Pak). A `.zip` of your installation
+  that contains them works too. The packer refuses an older `DUKE3D.GRP` (1.3D or
+  shareware): the expansions' scripts need what the Atomic Edition added, and over an
+  older base game they stopped at boot.
+* Each expansion in its own folder inside `gamedata/`:
 
 | Expansion | Folder | What to put in it | Episode | ROM |
 |---|---|---|---|---|
@@ -71,6 +74,10 @@ built with `tools/vendor/bin/build-tools.sh` (see
 [tools/vendor/bin/README.md](tools/vendor/bin/README.md)).
 
 ### How the expansions work
+
+- An expansion's ROM starts with the view at 80% of the screen (Screen Size in the Video
+  options, which the player can change and is saved): their maps are bigger and busier
+  than the base game's.
 
 - The ROM only has the expansion's episodes (those with maps in it, according to its
   `definelevelname`); if there is only one, the menu goes straight to the skill choice.

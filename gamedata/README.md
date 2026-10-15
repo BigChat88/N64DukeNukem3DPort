@@ -5,7 +5,7 @@
 
 ```
 gamedata/
-├── DUKE3D.GRP        base game: shareware 1.3D or Atomic Edition 1.4/1.5
+├── DUKE3D.GRP        base game: Atomic Edition 1.4/1.5 (the only version supported)
 ├── DUKE.RTS          optional (Remote Ridicule)
 ├── nwinter/          one folder per expansion → output/duke3d-nwinter.z64
 │   └── NWINTER.GRP
@@ -23,7 +23,9 @@ gamedata/
   a single `.zip` with any of them. The folder name gives the ROM its name
   (`duke3d-<folder>.z64`) and picks the menu background (`assets/addons/<folder>.png`):
   use `nwinter`, `vacation` and `dukedc` to get the ones the project already has.
-- The expansions need the Atomic Edition (1.4/1.5) as the base game.
+- Only the Atomic Edition (1.4/1.5, the Plutonium Pak) is supported, for the base game and
+  as the base of the expansions.
+  The packer refuses an older `DUKE3D.GRP` (1.3D or shareware, without episode 4).
 - Folders whose name starts with `_`, or that have their own `DUKE3D.GRP`, are skipped
   (useful for keeping other versions).
 - If an expansion comes as a CD image (`.bin`/`.iso`):

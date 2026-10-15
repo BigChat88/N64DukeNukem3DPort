@@ -914,8 +914,17 @@ static void n64_settings_set(const n64_settings_t *s)
 
 void CONFIG_N64LoadSettings( void )
 {
+    extern const char *n64_addon_grp(void);
     n64_settings_t s;
-    FILE *f = fopen(N64_SETTINGS_FILE, "rb");
+    FILE *f;
+
+    // The expansions' maps are bigger and busier than the base game's: their
+    // ROMs start with the view at 80% of the screen (ScreenSize 24: in vscrn, a
+    // border of 10% of the width on each side), which their players can change.
+    if (n64_addon_grp())
+        ud.screen_size = 24;
+
+    f = fopen(N64_SETTINGS_FILE, "rb");
 
     if (f)
     {

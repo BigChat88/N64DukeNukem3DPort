@@ -37,3 +37,6 @@ __pycache__/
 # --- CI staging ---
 stage/
 hosttools/
+
+# Editor caches (the DIDE extension for VS Code creates .dide/)
+.dide/
