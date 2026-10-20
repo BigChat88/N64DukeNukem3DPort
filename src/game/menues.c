@@ -779,7 +779,7 @@ static void n64_dfwrite_hittype(FILE *fil)
 #if PLATFORM_N64
 /*
  * The N64 has no keyboard to type the name of a save: picking a slot saves
- * there right away, named after it (DUKE1..DUKE10) unless it already has a
+ * there right away, named after it (DUKE1, DUKE2) unless it already has a
  * name, and goes back to the game.
  */
 static void n64_save_slot(int x)
@@ -1545,10 +1545,10 @@ void dispnames(void)
 
     minitext(c,48,ud.savegame[0],2,10+16);
     minitext(c,48+12,ud.savegame[1],2,10+16);
-    minitext(c,48+12+12,ud.savegame[2],2,10+16);
 #if PLATFORM_N64
     return;     // N64_SAVE_SLOTS
 #endif
+    minitext(c,48+12+12,ud.savegame[2],2,10+16);
     minitext(c,48+12+12+12,ud.savegame[3],2,10+16);
     minitext(c,48+12+12+12+12,ud.savegame[4],2,10+16);
     minitext(c,48+12+12+12+12+12,ud.savegame[5],2,10+16);
@@ -3660,9 +3660,9 @@ else
 
 #if PLATFORM_N64
 			// The resolution is fixed and there is no window: DETAIL,
-			// SCREEN SIZE, BRIGHTNESS, SHOW FPS and SCREEN TILT only.
+			// SCREEN SIZE, BRIGHTNESS, SHOW FPS, SCREEN TILT and FPS LIMIT.
 			onbar = (probey == 1 || probey == 2);
-			x = probe(c+6,43,16,5);
+			x = probe(c+6,43,16,6);
 			switch(x)
 			{
 				case -1:
@@ -3681,6 +3681,10 @@ else
 					// draws walls and sky on the CPU: ~3 fps less while it
 					// lasts (see n64_cols_begin in game.c).
 					ud.screen_tilting = !ud.screen_tilting;
+					break;
+				case 5:
+					n64_fps_limit = !n64_fps_limit;
+					n64_set_fps_limit(n64_fps_limit);
 					break;
 			}
 
@@ -3725,6 +3729,9 @@ else
 
 			menutext(c,43+16*4,SHX(-2),PHX(-2),"SCREEN TILT");
 			menutext(c+160+40,43+16*4,0,0,ud.screen_tilting?"ON":"OFF");
+
+			menutext(c,43+16*5,SHX(-2),PHX(-2),"FPS LIMIT");
+			menutext(c+160+40,43+16*5,0,0,n64_fps_limit?"ON":"OFF");
 			break;
 #endif
 

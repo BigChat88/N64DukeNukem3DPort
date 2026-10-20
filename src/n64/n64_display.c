@@ -224,6 +224,8 @@ static void init_new_res_vars(void)
     }
 }
 
+static int fps_limit_on = 0;     // n64_set_fps_limit
+
 static void init_video(void)
 {
     if (video_ready)
@@ -261,6 +263,19 @@ static void init_video(void)
     n64_mcols.list_end = ovlc_list + OVLC_WORDS;
 
     video_ready = 1;
+    n64_set_fps_limit(fps_limit_on);
+}
+
+/*
+ * FPS LIMIT (Video setup, on by default): at most 30 frames shown per
+ * second, for an even pace where the rate would otherwise wander between 30
+ * and 60. display_get() waits for it.
+ */
+void n64_set_fps_limit(int on)
+{
+    fps_limit_on = on;
+    if (video_ready)
+        display_set_fps_limit(on ? 30 : 0);
 }
 
 

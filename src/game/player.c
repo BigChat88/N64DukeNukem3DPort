@@ -2380,6 +2380,9 @@ void processinput(short snum)
     s = &sprite[pi];
 
     kb = &p->kickback_pic;
+#if PLATFORM_N64
+    n64_track_weapon(snum);
+#endif
 
     if(p->cheat_phase <= 0) sb_snum = sync[snum].bits;
     else sb_snum = 0;

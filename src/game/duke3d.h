@@ -159,13 +159,18 @@ extern int BYTEVERSION_1_3;
 #define SAVE_BYTEVERSION  ((int32_t)(BYTEVERSION ^ ud.conCRC[0] ^ 0x4E363403))   // (03: map XOR, planar, actor XOR)
 #define N64_SAVE_PREFIX   "save:/"
 // Save slots offered: a save is ~40-50 KB compressed (see n64_dfwrite_level
-// in menues.c) and the cartridge FlashRAM holds 128 KB.
-#define N64_SAVE_SLOTS    3
+// in menues.c, more in the expansions' bigger maps) and the cartridge
+// FlashRAM holds 128 KB: two saves and the settings leave no room for a
+// third. The files of the slots past these (older versions offered 3) are
+// deleted at boot, to give their space back (readsavenames).
+#define N64_SAVE_SLOTS    2
 // NEXT LEVEL cheat (menues.c) in the final level of an episode: the level the
 // game goes on to after the ending (the secret levels the episode has after
 // its final one), -1 for none; and set while playing those, which then end
 // without the ending again. Reset by newgame.
 extern int n64_after_ending, n64_past_ending;
+// FPS LIMIT of the Video setup (n64_set_fps_limit), kept with the settings.
+extern int32_t n64_fps_limit;
 #else
 #define SAVE_BYTEVERSION  BYTEVERSION
 #endif

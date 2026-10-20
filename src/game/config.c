@@ -35,6 +35,10 @@ Prepared for public release: 03/21/2003 - Charlie Wiederhold, 3D Realms
 #include <ctype.h>
 #include <time.h>
 #include "duke3d.h"
+#if PLATFORM_N64
+#include <stddef.h>     // offsetof
+#include <unistd.h>     // unlink
+#endif
 #include "scriplib.h"
 #include "build.h"
 
@@ -576,6 +580,15 @@ void readsavenames(void)
 #endif
 		}
 
+#if PLATFORM_N64
+        // A slot the menu no longer offers: its file only takes the space of
+        // the others (see N64_SAVE_SLOTS). No-op when there is none.
+        if (i >= N64_SAVE_SLOTS)
+        {
+            unlink(fullpathsavefilename);
+            continue;
+        }
+#endif
         if ((fil = fopen(fullpathsavefilename,"rb")) == NULL ) continue;
         dfread(&dummy,4,1,fil);
 
@@ -818,7 +831,7 @@ void CONFIG_ReadSetup( void )
  * takes a moment, too long to do on every change of a slider.
  */
 #define N64_SETTINGS_FILE    N64_SAVE_PREFIX "settings.dat"
-#define N64_SETTINGS_VERSION 1
+#define N64_SETTINGS_VERSION 2     // 2: fps_limit (a version 1 file loads with it on)
 
 typedef struct
 {
@@ -832,7 +845,10 @@ typedef struct
     int32_t fxvolume, musicvolume, soundtoggle, voicetoggle, ambiencetoggle;
     int32_t musictoggle, reversestereo;
     char  pwlockout[128];
+    int32_t fps_limit;
 } n64_settings_t;
+
+int32_t n64_fps_limit = 1;     // on by default
 
 static n64_settings_t n64_settings_saved;   // what save:/ holds (or the defaults)
 static int n64_settings_menu = -1;          // menu page at the last poll, -1: none
@@ -874,6 +890,7 @@ static void n64_settings_get(n64_settings_t *s)
     s->reversestereo = ReverseStereo;
     memcpy(s->pwlockout, ud.pwlockout, sizeof(s->pwlockout));
     s->pwlockout[sizeof(s->pwlockout) - 1] = 0;
+    s->fps_limit = n64_fps_limit;
 }
 
 static void n64_settings_set(const n64_settings_t *s)
@@ -910,6 +927,7 @@ static void n64_settings_set(const n64_settings_t *s)
     ReverseStereo = s->reversestereo;
     memcpy(ud.pwlockout, s->pwlockout, sizeof(s->pwlockout));
     ud.pwlockout[sizeof(s->pwlockout) - 1] = 0;
+    n64_fps_limit = s->fps_limit != 0;
 }
 
 void CONFIG_N64LoadSettings( void )
@@ -928,14 +946,22 @@ void CONFIG_N64LoadSettings( void )
 
     if (f)
     {
-        if (fread(&s, sizeof(s), 1, f) == 1 && memcmp(s.magic, "DKCF", 4) == 0 &&
-            s.version == N64_SETTINGS_VERSION)
+        size_t n;
+
+        memset(&s, 0, sizeof(s));
+        n = fread(&s, 1, sizeof(s), f);
+        if (memcmp(s.magic, "DKCF", 4) == 0 &&
+            ((s.version == N64_SETTINGS_VERSION && n == sizeof(s)) ||
+             (s.version == 1 && n == offsetof(n64_settings_t, fps_limit))))
         {
+            if (s.version == 1)
+                s.fps_limit = 1;
             n64_settings_set(&s);
             printf("settings: loaded from %s\n", N64_SETTINGS_FILE);
         }
         fclose(f);
     }
+    n64_set_fps_limit(n64_fps_limit);
     n64_settings_get(&n64_settings_saved);
 }
 

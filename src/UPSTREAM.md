@@ -110,11 +110,15 @@ marked with `PLATFORM_N64` / `N64`.
   in `save:/` (FlashRAM, `n64/n64_savefs.c`); without the compiled CON script (it is
   recompiled at boot; the CON CRC is part of the version, `SAVE_BYTEVERSION`); only the
   walls and sectors in use; free sprites and actors zeroed; `dfwrite`/`dfread` keep the
-  delta encoding but without the LZW (misaligned reads).
+  delta encoding but without the LZW (misaligned reads). Two slots (`N64_SAVE_SLOTS`):
+  what the 128 KB hold.
 - Settings on the N64 (`game/config.c`, `game/game.c`): there is no `DUKE3D.CFG`; the
   menu settings (volumes, brightness, screen size, aiming...) are kept in
   `save:/settings.dat`, written when the menus change page or close and something changed
-  (`CONFIG_N64PollSettings`, after each `menus()`).
+  (`CONFIG_N64PollSettings`, after each `menus()`). The Video setup adds FPS LIMIT (30 fps,
+  on by default, `n64_set_fps_limit`).
+- `game/actors.c` (`checkavailweapon`): on the N64, a weapon out of ammo gives way to the
+  one held before it (`n64_track_weapon`), not to the first of the weapon order with ammo.
 - `game/game.c` (`animatesprites`): an actor's current action was recognized with
   `t4 > 10000`, which on the N64 (addresses 0x80xxxxxx, negative as `int32`) was never
   true: action frames (walking, dying...) were not applied. Now it checks that the address

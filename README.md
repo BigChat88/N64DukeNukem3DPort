@@ -14,7 +14,7 @@ Duke Nukem 3D 1.4 or 1.5 (and its expansions), and the packer turns it into ROMs
 * An **Expansion Pak** (8 MB of RAM), in the console or enabled in the emulator.
   The game does not boot without it.
 * Games and settings are saved to the cartridge FlashRAM: the flashcart or the emulator
-  takes care of it.
+  takes care of it. It has room for two saved games per ROM.
 * A flashcart (EverDrive-64, SummerCart64…) or an emulator (ares, simple64…).
 
 > **Game Expansions: play them on a console that supports overclocking.** For Duke It Out

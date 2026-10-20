@@ -89,6 +89,9 @@ void n64_skip_next_frame(void);
 // Frees the main menu's background picture (64 KB, more with an add-on's),
 // loaded again when the menu is shown again: the levels need the memory.
 void n64_menu_background_release(void);
+// FPS LIMIT of the Video setup: at most 30 frames shown per second when on
+// (n64_display.c).
+void n64_set_fps_limit(int on);
 // Shows a fatal error on screen and halts.
 void n64_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 

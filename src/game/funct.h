@@ -543,6 +543,9 @@ extern void addweapon(struct player_struct *p,short weapon);
 extern void checkavailinven(struct player_struct *p);
 //#line "actors.c" 152
 extern void checkavailweapon(struct player_struct *p);
+#if PLATFORM_N64
+extern void n64_track_weapon(short snum);
+#endif
 //#line "actors.c" 301
 extern int32_t ifsquished(short i,short p);
 //#line "actors.c" 326

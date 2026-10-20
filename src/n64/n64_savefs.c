@@ -45,7 +45,7 @@
 
 #include "n64_platform.h"
 
-#define SAVEFS_MAX_FILES    16      // 10 saved games, the settings and room to spare
+#define SAVEFS_MAX_FILES    16      // the saved games, the settings and room to spare
 #define RECORD_MAGIC        0x444B5356  // "DKSV"
 #define CHUNK_SIZE          16384
 #define NO_SPACE            0xFFFFFFFFu
@@ -912,6 +912,25 @@ static int savefs_close(void *file)
     return result;
 }
 
+/*
+ * Drops a file: its space is free for the others. Its record is left in the
+ * FlashRAM (erasing it would rewrite a sector other files may share) until
+ * that space is reused, so until then a scan at boot finds the file again:
+ * whoever deletes a file deletes it at every boot.
+ */
+static int savefs_unlink(char *name)
+{
+    int e = find_entry(base_name(name));
+
+    if (e < 0)
+    {
+        errno = ENOENT;
+        return -1;
+    }
+    files[e] = files[--nfiles];
+    return 0;
+}
+
 static filesystem_t savefs = {
     .open = savefs_open,
     .fstat = savefs_fstat,
@@ -920,6 +939,7 @@ static filesystem_t savefs = {
     .read = savefs_read,
     .write = savefs_write,
     .close = savefs_close,
+    .unlink = savefs_unlink,
 };
 
 

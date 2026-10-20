@@ -100,6 +100,7 @@ typedef struct {
     int (*read)(void *file, uint8_t *ptr, int len);
     int (*write)(void *file, uint8_t *ptr, int len);
     int (*close)(void *file);
+    int (*unlink)(char *name);
 } filesystem_t;
 
 int attach_filesystem(const char *prefix, filesystem_t *fs);

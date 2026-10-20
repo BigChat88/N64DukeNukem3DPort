@@ -197,6 +197,30 @@ void checkavailinven( struct player_struct *p )
     else p->inven_icon = 0;
 }
 
+#if PLATFORM_N64
+/*
+ * N64: the weapon in hand that runs out of ammo gives way to the one held
+ * before it, if that one still has ammo. The original goes down the weapon
+ * order of DUKE3D.CFG instead (which no menu here can change), and ends on
+ * the bare fist (the "mighty foot") when none of them has any.
+ * n64_track_weapon (each tic, from processinput) keeps the weapon held before
+ * the current one: kept in here, not in player_struct, so that saved games
+ * stay as they are. The detonator after a thrown pipe bomb does not count.
+ */
+static short n64_weapon_held[MAXPLAYERS], n64_weapon_before[MAXPLAYERS];
+
+void n64_track_weapon(short snum)
+{
+    short w = ps[snum].curr_weapon;
+
+    if (w != n64_weapon_held[snum] && w != HANDREMOTE_WEAPON)
+    {
+        n64_weapon_before[snum] = n64_weapon_held[snum];
+        n64_weapon_held[snum] = w;
+    }
+}
+#endif
+
 void checkavailweapon( struct player_struct *p )
 {
     short i,snum;
@@ -221,20 +245,27 @@ void checkavailweapon( struct player_struct *p )
 
     snum = sprite[p->i].yvel;
 
-    for(i=0;i<10;i++)
+#if PLATFORM_N64
+    weap = n64_weapon_before[snum];
+    if (ud.recstat == 2 || weap == KNEE_WEAPON || weap == p->curr_weapon ||
+        !p->gotweapon[weap] || p->ammo_amount[weap] <= 0)   // (demos: as recorded)
+#endif
     {
-        weap = ud.wchoice[snum][i];
-		if (VOLUMEONE)
-			if(weap > 6) continue;
+        for(i=0;i<10;i++)
+        {
+            weap = ud.wchoice[snum][i];
+            if (VOLUMEONE)
+                if(weap > 6) continue;
 
-        if(weap == 0) weap = 9;
-        else weap--;
+            if(weap == 0) weap = 9;
+            else weap--;
 
-        if( weap == 0 || ( p->gotweapon[weap] && p->ammo_amount[weap] > 0 ) )
-            break;
+            if( weap == 0 || ( p->gotweapon[weap] && p->ammo_amount[weap] > 0 ) )
+                break;
+        }
+
+        if(i == 10) weap = 0;
     }
-
-    if(i == 10) weap = 0;
 
     // Found the weapon
 

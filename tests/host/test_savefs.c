@@ -536,6 +536,46 @@ static void test_full(void)
     }
 }
 
+// A deleted file gives its space to the others (the game deletes the save
+// slots it no longer offers, see readsavenames).
+static void test_unlink(void)
+{
+    static uint8_t big[40000];
+    char name[16];
+    int i;
+
+    format_flash();
+    for (i = 0; i < 3; i++)
+    {
+        make_data(big, sizeof(big), 200 + i, 100);
+        snprintf(name, sizeof(name), "game%d.sav", i);
+        if (write_file(name, big, sizeof(big)) != 0)
+            fail("%s: not saved", name);
+    }
+    make_data(big, sizeof(big), 203, 100);
+    if (write_file("game3.sav", big, sizeof(big)) == 0)
+        fail("a fourth incompressible file of 40 KB fit");
+
+    if (fs->unlink("/game2.sav") != 0)
+        fail("unlink failed");
+    if (fs->unlink("/game2.sav") == 0 || errno != ENOENT)
+        fail("unlink of a missing file should fail with ENOENT");
+    check_missing("game2.sav");
+    if (write_file("game3.sav", big, sizeof(big)) != 0)
+        fail("no room after the unlink");
+
+    remount();
+    check_missing("game2.sav");     // its record was overwritten
+    for (i = 0; i < 4; i++)
+    {
+        if (i == 2)
+            continue;
+        make_data(big, sizeof(big), 200 + i, 100);
+        snprintf(name, sizeof(name), "game%d.sav", i);
+        check_file(name, big, sizeof(big));
+    }
+}
+
 static void test_write_error(void)
 {
     static uint8_t a[5000];
@@ -699,6 +739,7 @@ int main(void)
     run("sectors_written", test_sectors_written);
     run("max_files", test_max_files);
     run("full", test_full);
+    run("unlink", test_unlink);
     run("write_error", test_write_error);
     run("no_status_bits", test_no_status_bits);
     run("memory", test_memory);
